@@ -11,7 +11,13 @@ from icalendar import Calendar, Event
 
 sys.stdout.reconfigure(line_buffering=True)
 
-CALENDAR_PAGE_URL = "https://www.fsw.tv/driving/calendar/"
+# 探索対象のFSW公式ページ候補
+TARGET_PAGE_URLS = [
+    "https://www.fsw.tv/driving/calendar/",
+    "https://www.fsw.tv/driving/sports/racing.html",
+    "https://www.fsw.tv/driving/sports/index.html",
+    "https://www.fsw.tv/driving/"
+]
 DEFAULT_DURATION_MINUTES = 30
 
 def run_curl(url, output_path=None):
@@ -33,32 +39,57 @@ def run_curl(url, output_path=None):
         return result.stdout
 
 def download_latest_fsw_pdf():
-    print(f"カレンダー掲載ページを取得中: {CALENDAR_PAGE_URL}", flush=True)
-    html_content = run_curl(CALENDAR_PAGE_URL)
+    pdf_candidates = []
 
-    pdf_urls = re.findall(r'href=["\'](.*?\.pdf)["\']', html_content, re.IGNORECASE)
-    if not pdf_urls:
-        raise Exception("カレンダーページからPDFリンクが検出できませんでした。")
+    for page_url in TARGET_PAGE_URLS:
+        print(f"カレンダー掲載ページを確認中: {page_url}", flush=True)
+        try:
+            html_content = run_curl(page_url)
+        except Exception as e:
+            print(f"  [警告] ページアクセス失敗: {e}", flush=True)
+            continue
 
-    target_href = None
-    for href in pdf_urls:
-        if any(k in href.lower() for k in ["sports", "calendar", "racing", "soukou", "drive"]):
-            target_href = href
+        print(f"  取得HTMLサイズ: {len(html_content)} bytes", flush=True)
+        if len(html_content) < 500:
+            continue
+
+        # .pdf のリンクをすべて抽出（相対パス・パラメータ付き含む）
+        found_links = re.findall(r'href=["\']([^"\']+\.pdf(?:\?[^"\']*)?)["\']', html_content, re.IGNORECASE)
+        for link in found_links:
+            full_url = urllib.parse.urljoin(page_url, link)
+            if full_url not in pdf_candidates:
+                pdf_candidates.append(full_url)
+
+    print(f"検出されたPDFリンク総数: {len(pdf_candidates)} 件", flush=True)
+    for p in pdf_candidates:
+        print(f"  - 候補: {p}", flush=True)
+
+    if not pdf_candidates:
+        raise Exception("FSW公式サイト内からPDFリンクが検出できませんでした。")
+
+    # レーシングコース（RC）やスポーツ走行用のPDFを優先
+    target_url = None
+    for p in pdf_candidates:
+        p_lower = p.lower()
+        # ショート(short)やカート(kart)を除外
+        if "short" in p_lower or "kart" in p_lower:
+            continue
+        if any(k in p_lower for k in ["racing", "rc", "sports", "calendar", "soukou", "schedule"]):
+            target_url = p
             break
-    if not target_href:
-        target_href = pdf_urls[0]
 
-    full_url = urllib.parse.urljoin(CALENDAR_PAGE_URL, target_href)
-    print(f"対象PDFのURL: {full_url}", flush=True)
+    if not target_url:
+        target_url = pdf_candidates[0]
 
+    print(f"ダウンロード対象PDFを決定: {target_url}", flush=True)
     local_pdf = "downloaded_calendar.pdf"
-    run_curl(full_url, output_path=local_pdf)
-    
+    run_curl(target_url, output_path=local_pdf)
+
     if os.path.exists(local_pdf) and os.path.getsize(local_pdf) > 5000:
-        print(f"PDFダウンロード成功: {local_pdf}", flush=True)
+        print(f"PDFダウンロード成功: {local_pdf} (サイズ: {os.path.getsize(local_pdf)} bytes)", flush=True)
         return local_pdf
     else:
-        raise Exception("ダウンロードされたファイルが空、またはアクセス制限を受けました。")
+        raise Exception("ダウンロードされたPDFが空、またはアクセス制限を受けました。")
 
 def parse_single_page(page, page_num):
     page_events = []
@@ -120,18 +151,14 @@ def parse_single_page(page, page_num):
         else:
             lower_bound = (bottom_y + day_rows[i+1][1]) / 2.0
 
-        # 当該日付行の文字群
         row_chars = [c for c in chars if upper_bound <= ((c['top'] + c['bottom']) / 2.0) <= lower_bound and c['x0'] >= (x_7 - 15)]
         if not row_chars:
             continue
 
-        # ドットやノイズ文字を除去
         valid_chars = [c for c in row_chars if c['text'] not in ['・', '･', '.', ' ']]
         if not valid_chars:
             continue
 
-        # X座標の近さ（横方向の重なり）でまずグループ化
-        # これにより上下2段（L-4 の下に A）に分かれていても同じX位置なら同一枠として束ねられる
         valid_chars = sorted(valid_chars, key=lambda c: c['x0'])
         
         clusters = []
@@ -141,7 +168,6 @@ def parse_single_page(page, page_num):
                 curr.append(c)
             else:
                 prev_c = curr[-1]
-                # X方向の距離が 8.5pt 以内なら同一枠（横並び文字、または上下段文字）
                 if (c['x0'] - prev_c['x1']) < 8.5:
                     curr.append(c)
                 else:
@@ -151,13 +177,12 @@ def parse_single_page(page, page_num):
             clusters.append(curr)
 
         for cluster in clusters:
-            # 枠内の文字をY座標→X座標の順（上から下、左から右）で並べてテキスト化
             sorted_cluster = sorted(cluster, key=lambda c: (c['top'], c['x0']))
             raw_text = "".join([c['text'] for c in sorted_cluster])
             clean_str = re.sub(r'[^A-Za-z0-9]', '', raw_text).upper()
 
-            # 枠判定 (L4, S4, NS4, N4, R4, RC4, FS4, O4) + (A/B/C/D)
-            match = re.search(r'(S4|NS4|N4|R4|RC4|FS4|L4|O4)([ABCD]?)', clean_str)
+            # L4, S4, N4, R4, RC4, FS4, O4
+            match = re.search(r'(S4|N4|R4|RC4|FS4|L4|O4)([ABCD]?)', clean_str)
             if not match:
                 continue
 
@@ -167,12 +192,10 @@ def parse_single_page(page, page_num):
             if grp_name:
                 formatted_title += f" {grp_name}"
 
-            # 最も左端のX座標を開始基準にする
             start_x = min(c['x0'] for c in cluster)
             adjusted_x = start_x - 4.0
             total_minutes = 7 * 60 + ((adjusted_x - x_7) / points_per_hour) * 60.0
 
-            # 10分刻みにスナップ（8:40に吸着）
             snapped_minute = int(round(total_minutes / 10.0) * 10)
             hour = snapped_minute // 60
             minute = snapped_minute % 60
@@ -199,12 +222,6 @@ def parse_single_page(page, page_num):
             unique_events.append(ev)
 
     print(f"  -> {year}年{month}月のページから {len(unique_events)} 件の走行枠を抽出完了", flush=True)
-
-    # 11月7日の検証ログ
-    if month == 11:
-        nov7 = [e for e in unique_events if e['start'].day == 7]
-        print(f"     [11/7 検証] {len(nov7)} 件抽出: {', '.join([e['time_str'] + ' ' + e['summary'] for e in nov7])}", flush=True)
-
     return unique_events
 
 def parse_fsw_pdf(pdf_path):
