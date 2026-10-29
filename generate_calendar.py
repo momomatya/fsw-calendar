@@ -63,7 +63,6 @@ def parse_single_page(page):
     page_events = []
     page_text = page.extract_text() or ""
     
-    # 年月を抽出
     year_match = re.search(r'(\d{4})年\s*(\d{1,2})月', page_text)
     if year_match:
         year = int(year_match.group(1))
@@ -75,31 +74,37 @@ def parse_single_page(page):
     if not words:
         return []
 
-    # 時間目盛りの基準（7:00 と 18:00 のX座標）
+    # 時間目盛りの基準座標（7:00 と 18:00）を探索
     time_headers = {}
     for h in range(7, 19):
-        matches = [w for w in words if w['text'] == f"{h}:00" and w['x0'] > 180]
+        matches = [w for w in words if w['text'] == f"{h}:00" and w['x0'] > 180 and w['top'] < 100]
         if matches:
             time_headers[h] = min(matches, key=lambda x: x['top'])['x0']
 
-    x_7 = time_headers.get(7, 201.1)
-    x_18 = time_headers.get(18, 540.2)
+    # 目盛りが見つからない場合のフォールバック値
+    x_7 = time_headers.get(7, 201.0)
+    x_18 = time_headers.get(18, 540.0)
     points_per_hour = (x_18 - x_7) / 11.0
 
-    # 日付行の特定
+    # 1〜31日の行位置（Y座標）を取得
     day_rows = []
     for d in range(1, 32):
-        d_words = [w for w in words if w['text'] == str(d) and w['x0'] < 70 and w['top'] > 90]
+        d_words = [w for w in words if w['text'] == str(d) and w['x0'] < 65 and w['top'] > 70]
         if d_words:
-            day_rows.append((d, d_words[0]['top']))
+            # ページ内で最も妥当なY座標を特定
+            top_y = min(d_words, key=lambda x: x['x0'])['top']
+            day_rows.append((d, top_y))
 
+    # 各日付行ごとに走行枠テキストを解析
     for day, y_top in day_rows:
-        row_words = [w for w in words if abs(w['top'] - y_top) < 7 and w['x0'] >= (x_7 - 10)]
+        # 日付行の高さ（±8pt以内）にある単語を取得
+        row_words = [w for w in words if abs(w['top'] - y_top) < 8 and w['x0'] >= (x_7 - 15)]
         if not row_words:
             continue
 
         row_words = sorted(row_words, key=lambda x: x['x0'])
-        
+
+        # ドット柄などで分断された文字を結合しやすくするため、ギャップ許容値を広げてクラスタリング
         clusters = []
         curr_cluster = []
         for w in row_words:
@@ -108,7 +113,8 @@ def parse_single_page(page):
             else:
                 prev_w = curr_cluster[-1]
                 gap = w['x0'] - prev_w['x1']
-                if gap < 6.0:
+                # 文字同士の間隔が10pt以内なら同一の枠表記と判定
+                if gap < 10.0:
                     curr_cluster.append(w)
                 else:
                     clusters.append(curr_cluster)
@@ -117,41 +123,60 @@ def parse_single_page(page):
             clusters.append(curr_cluster)
 
         for cluster in clusters:
-            text = " ".join([w['text'] for w in cluster]).strip()
-            text = re.sub(r'\s+', ' ', text)
+            # 単語を結合し、余計な空白を除去
+            raw_text = "".join([w['text'] for w in cluster]).strip()
             
-            if not any(cls in text for cls in ['S-4', 'NS-4', 'N-4', 'R-4', 'RC-4', 'FS-4', 'L-4', 'O-4']):
+            # ドット柄の記号や微細ノイズを除去して正規化
+            norm_text = re.sub(r'[\s・･\.\-_]', '', raw_text)
+
+            # 対象クラスのパターンマッチング (例: S4A, NS4B, N4A, R4C 等)
+            match = re.search(r'(S4|NS4|N4|R4|RC4|FS4|L4|O4)([A-Da-d]?)', norm_text)
+            if not match:
                 continue
 
+            cls_name = match.group(1)
+            group_name = match.group(2).upper()
+            
+            # 正式表記を構築 (例: "S-4 A", "NS-4 B")
+            formatted_title = f"{cls_name[:-1]}-{cls_name[-1]}"
+            if group_name:
+                formatted_title += f" {group_name}"
+
+            # 枠の左端座標から開始時刻を計算
             start_x = cluster[0]['x0']
             offset_hours = (start_x - x_7) / points_per_hour
-            total_minutes = 7 * 60 + int(offset_hours * 60)
-            
-            hour = total_minutes // 60
-            minute = total_minutes % 60
-            
-            minute = int(round(minute / 5.0) * 5)
-            if minute >= 60:
-                hour += 1
-                minute -= 60
+            raw_total_minutes = 7 * 60 + (offset_hours * 60)
+
+            # 富士のタイムスケジュール（5分または10分刻み）に最も近い目盛りに丸め
+            minute_step = 5
+            rounded_minutes = int(round(raw_total_minutes / minute_step) * minute_step)
+
+            hour = rounded_minutes // 60
+            minute = rounded_minutes % 60
 
             try:
                 start_dt = datetime(year, month, day, hour, minute)
                 end_dt = start_dt + timedelta(minutes=DEFAULT_DURATION_MINUTES)
                 page_events.append({
-                    "summary": f"{text}",
+                    "summary": formatted_title,
                     "start": start_dt,
                     "end": end_dt,
-                    "description": f"富士スピードウェイ レーシングコース スポーツ走行枠\n枠名: {text}"
+                    "description": f"富士スピードウェイ レーシングコース スポーツ走行枠\n枠名: {formatted_title}"
                 })
-            except ValueError as e:
-                print(f"日付パースエラー: {year}-{month}-{day} {hour}:{minute} -> {e}")
+            except ValueError:
                 continue
 
-    print(f"  -> {year}年{month}月のページから {len(page_events)} 件の走行枠を抽出")
-    if page_events:
-        print(f"     [サンプル] 初回枠: {page_events[0]['start']} ({page_events[0]['summary']})")
-    return page_events
+    # 同一日の同一枠の重複を排除
+    unique_events = []
+    seen = set()
+    for ev in sorted(page_events, key=lambda x: x['start']):
+        key = (ev['start'], ev['summary'])
+        if key not in seen:
+            seen.add(key)
+            unique_events.append(ev)
+
+    print(f"  -> {year}年{month}月のページから {len(unique_events)} 件の走行枠を抽出")
+    return unique_events
 
 def parse_fsw_pdf(pdf_path):
     all_events = []
@@ -186,7 +211,6 @@ def create_ical(events, output_filename="fsw_calendar.ics"):
 def save_events_json(events, output_filename="events.json"):
     web_events = []
     for ev in events:
-        # FullCalendarが完全に認識できるISO8601フォーマット (YYYY-MM-DDTHH:MM:SS)
         start_str = ev["start"].strftime("%Y-%m-%dT%H:%M:%S")
         end_str = ev["end"].strftime("%Y-%m-%dT%H:%M:%S")
         web_events.append({
