@@ -1,0 +1,40 @@
+name: Update FSW Calendar
+
+on:
+  schedule:
+    # 毎日 日本時間の朝6時（UTC 21:00）に自動実行
+    - cron: '0 21 * * *'
+  # GitHubの画面から手動でいつでも実行できるボタンを付ける
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリのコードを取得
+        uses: actions/checkout@v4
+
+      - name: Python環境のセットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 必要なライブラリのインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: カレンダー生成スクリプトの実行
+        run: |
+          python generate_calendar.py
+
+      - name: 生成されたカレンダーファイルを保存して公開
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add fsw_calendar.ics
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto update FSW calendar [skip ci]" && git push)
