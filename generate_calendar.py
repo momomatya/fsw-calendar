@@ -89,12 +89,12 @@ def parse_single_page(page):
     # 日付行の特定
     day_rows = []
     for d in range(1, 32):
-        d_words = [w for w in words if w['text'] == str(d) and w['x0'] < 60 and w['top'] > 100]
+        d_words = [w for w in words if w['text'] == str(d) and w['x0'] < 70 and w['top'] > 90]
         if d_words:
             day_rows.append((d, d_words[0]['top']))
 
     for day, y_top in day_rows:
-        row_words = [w for w in words if abs(w['top'] - y_top) < 6 and w['x0'] >= (x_7 - 5)]
+        row_words = [w for w in words if abs(w['top'] - y_top) < 7 and w['x0'] >= (x_7 - 10)]
         if not row_words:
             continue
 
@@ -108,7 +108,7 @@ def parse_single_page(page):
             else:
                 prev_w = curr_cluster[-1]
                 gap = w['x0'] - prev_w['x1']
-                if gap < 5.0:
+                if gap < 6.0:
                     curr_cluster.append(w)
                 else:
                     clusters.append(curr_cluster)
@@ -144,19 +144,20 @@ def parse_single_page(page):
                     "end": end_dt,
                     "description": f"富士スピードウェイ レーシングコース スポーツ走行枠\n枠名: {text}"
                 })
-            except ValueError:
+            except ValueError as e:
+                print(f"日付パースエラー: {year}-{month}-{day} {hour}:{minute} -> {e}")
                 continue
 
     print(f"  -> {year}年{month}月のページから {len(page_events)} 件の走行枠を抽出")
+    if page_events:
+        print(f"     [サンプル] 初回枠: {page_events[0]['start']} ({page_events[0]['summary']})")
     return page_events
 
 def parse_fsw_pdf(pdf_path):
-    """PDF内の全ページを走査し、対象ページをすべて合算する"""
     all_events = []
     with pdfplumber.open(pdf_path) as pdf:
         for idx, page in enumerate(pdf.pages):
             text = page.extract_text() or ""
-            # レーシングコースのスポーツ走行予定表が含まれるページのみ抽出
             if "レーシングコース" in text and "スポーツ走行予定表" in text:
                 print(f"対象ページ検出: ページ {idx + 1}")
                 events = parse_single_page(page)
@@ -185,10 +186,13 @@ def create_ical(events, output_filename="fsw_calendar.ics"):
 def save_events_json(events, output_filename="events.json"):
     web_events = []
     for ev in events:
+        # FullCalendarが完全に認識できるISO8601フォーマット (YYYY-MM-DDTHH:MM:SS)
+        start_str = ev["start"].strftime("%Y-%m-%dT%H:%M:%S")
+        end_str = ev["end"].strftime("%Y-%m-%dT%H:%M:%S")
         web_events.append({
             "title": ev["summary"],
-            "start": ev["start"].strftime("%Y-%m-%dT%H:%M:%S"),
-            "end": ev["end"].strftime("%Y-%m-%dT%H:%M:%S"),
+            "start": start_str,
+            "end": end_str,
             "description": ev["description"]
         })
     with open(output_filename, "w", encoding="utf-8") as f:
