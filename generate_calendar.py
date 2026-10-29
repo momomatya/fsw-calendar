@@ -96,37 +96,37 @@ def parse_single_page(page, page_num):
         x_7 = 205.0
         points_per_hour = 30.8
 
-    # 左端の日付（1〜31）の検出
+    # 日付（1〜31）の検出：最も左端（x0 < 60）にある単独の数字を抽出
     day_rows = []
     for d in range(1, 32):
         d_str = str(d)
-        d_words = [w for w in words if w['text'] == d_str and w['x0'] < 90 and w['top'] > 50]
+        d_words = [w for w in words if w['text'].strip() == d_str and w['x0'] < 60 and w['top'] > 50]
         if d_words:
             chosen = min(d_words, key=lambda w: w['x0'])
             day_rows.append((d, chosen['top'], chosen['bottom']))
 
+    # 日付数字順に並べる
     day_rows = sorted(day_rows, key=lambda x: x[1])
-    print(f"     検出された日付行数: {len(day_rows)} 日分", flush=True)
 
     for i, (day, top_y, bottom_y) in enumerate(day_rows):
         if i == 0:
-            upper_bound = top_y - 5
+            upper_bound = top_y - 6
         else:
             upper_bound = (day_rows[i-1][2] + top_y) / 2.0
 
         if i == len(day_rows) - 1:
-            lower_bound = bottom_y + 12
+            lower_bound = bottom_y + 14
         else:
             lower_bound = (bottom_y + day_rows[i+1][1]) / 2.0
 
-        # 当該日付行の文字群を抽出
+        # 当該日付行の文字群（スケジュールエリア：x0 >= x_7 - 15）
         row_words = [w for w in words if upper_bound <= ((w['top'] + w['bottom']) / 2.0) <= lower_bound and w['x0'] >= (x_7 - 15)]
         if not row_words:
             continue
 
         row_words = sorted(row_words, key=lambda w: w['x0'])
 
-        # クラスタリング
+        # ドットや記号で細切れになった文字を結合するクラスタリング（間隔14ptまで許容）
         clusters = []
         curr = []
         for w in row_words:
@@ -134,7 +134,7 @@ def parse_single_page(page, page_num):
                 curr.append(w)
             else:
                 prev_w = curr[-1]
-                if (w['x0'] - prev_w['x1']) < 9.0:
+                if (w['x0'] - prev_w['x1']) < 14.0:
                     curr.append(w)
                 else:
                     clusters.append(curr)
@@ -144,8 +144,10 @@ def parse_single_page(page, page_num):
 
         for cluster in clusters:
             raw_text = "".join([w['text'] for w in cluster])
+            # ノイズ記号を除去
             clean_str = re.sub(r'[^A-Za-z0-9]', '', raw_text).upper()
 
+            # 枠判定 (S4, NS4, N4, R4, RC4, FS4, L4, O4) + (A/B/C/D)
             match = re.search(r'(S4|NS4|N4|R4|RC4|FS4|L4|O4)([ABCD]?)', clean_str)
             if not match:
                 continue
@@ -156,6 +158,7 @@ def parse_single_page(page, page_num):
             if grp_name:
                 formatted_title += f" {grp_name}"
 
+            # 枠の開始X座標
             start_x = cluster[0]['x0']
             adjusted_x = start_x - 4.0
             total_minutes = 7 * 60 + ((adjusted_x - x_7) / points_per_hour) * 60.0
@@ -228,41 +231,4 @@ def create_ical(events, output_filename="fsw_calendar.ics"):
         f.write(cal.to_ical())
     print(f"[成功] iCalカレンダー生成完了: {output_filename}", flush=True)
 
-def save_events_json(events, output_filename="events.json"):
-    web_events = []
-    for ev in events:
-        start_str = ev["start"].strftime("%Y-%m-%dT%H:%M:%S")
-        end_str = ev["end"].strftime("%Y-%m-%dT%H:%M:%S")
-        web_events.append({
-            "title": ev["summary"],
-            "start": start_str,
-            "end": end_str,
-            "description": ev["description"]
-        })
-    with open(output_filename, "w", encoding="utf-8") as f:
-        json.dump(web_events, f, ensure_ascii=False, indent=2)
-    print(f"[成功] Web用JSON生成完了: {output_filename} (合計 {len(web_events)} 件)", flush=True)
-
-def main():
-    print("=== スクリプト実行開始 ===", flush=True)
-    local_pdfs = [f for f in glob.glob("*.pdf") if "downloaded" not in f]
-    print(f"リポジトリ内の検出PDF一覧: {local_pdfs}", flush=True)
-
-    pdf_file = None
-    try:
-        pdf_file = download_latest_fsw_pdf()
-    except Exception as e:
-        print(f"Web自動取得をスキップ（または失敗）: {e}", flush=True)
-        if local_pdfs:
-            pdf_file = sorted(local_pdfs, key=lambda x: os.path.getsize(x), reverse=True)[0]
-            print(f"リポジトリ内のバックアップPDFを使用します: {pdf_file} (サイズ: {os.path.getsize(pdf_file)} bytes)", flush=True)
-        else:
-            raise e
-
-    events = parse_fsw_pdf(pdf_file)
-    create_ical(events, output_filename="fsw_calendar.ics")
-    save_events_json(events, output_filename="events.json")
-    print("=== スクリプト全処理完了 ===", flush=True)
-
-if __name__ == '__main__':
-    main()
+def save_
