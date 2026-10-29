@@ -70,89 +70,101 @@ def parse_single_page(page):
     else:
         return []
 
-    words = page.extract_words()
-    if not words:
+    chars = page.chars
+    if not chars:
         return []
 
-    # 時間目盛りの基準座標（7:00 と 18:00）を探索
-    time_headers = {}
+    words = page.extract_words(x_tolerance=2, y_tolerance=2)
+
+    # 7:00 〜 18:00 の目盛りヘッダー文字から各時間の基準X座標を精密に取得
+    hour_x_map = {}
     for h in range(7, 19):
-        matches = [w for w in words if w['text'] == f"{h}:00" and w['x0'] > 180 and w['top'] < 100]
+        pattern = f"{h}:00"
+        matches = [w for w in words if w['text'] == pattern and w['x0'] > 150 and w['top'] < 100]
         if matches:
-            time_headers[h] = min(matches, key=lambda x: x['top'])['x0']
+            m = min(matches, key=lambda x: x['top'])
+            # 文字の中心をその時間の基準点とする
+            hour_x_map[h] = (m['x0'] + m['x1']) / 2.0
 
-    # 目盛りが見つからない場合のフォールバック値
-    x_7 = time_headers.get(7, 201.0)
-    x_18 = time_headers.get(18, 540.0)
-    points_per_hour = (x_18 - x_7) / 11.0
+    # 1時間あたりの幅（ピクセル/ポイント数）を算出
+    valid_hours = sorted(hour_x_map.keys())
+    if len(valid_hours) >= 2:
+        h_first, h_last = valid_hours[0], valid_hours[-1]
+        points_per_hour = (hour_x_map[h_last] - hour_x_map[h_first]) / (h_last - h_first)
+        # 基準となる 7:00 のX座標
+        x_7 = hour_x_map[h_first] - (h_first - 7) * points_per_hour
+    else:
+        # 見つからない場合の安全値
+        x_7 = 205.0
+        points_per_hour = 30.8
 
-    # 1〜31日の行位置（Y座標）を取得
+    # 日付列（1〜31日）のY座標を取得
     day_rows = []
     for d in range(1, 32):
-        d_words = [w for w in words if w['text'] == str(d) and w['x0'] < 65 and w['top'] > 70]
-        if d_words:
-            # ページ内で最も妥当なY座標を特定
-            top_y = min(d_words, key=lambda x: x['x0'])['top']
-            day_rows.append((d, top_y))
+        d_chars = [c for c in chars if c['text'] == str(d) and c['x0'] < 65 and c['top'] > 70]
+        if d_chars:
+            chosen = min(d_chars, key=lambda c: c['x0'])
+            day_rows.append((d, chosen['top'], chosen['bottom']))
 
-    # 各日付行ごとに走行枠テキストを解析
-    for day, y_top in day_rows:
-        # 日付行の高さ（±8pt以内）にある単語を取得
-        row_words = [w for w in words if abs(w['top'] - y_top) < 8 and w['x0'] >= (x_7 - 15)]
-        if not row_words:
+    for day, top_y, bottom_y in day_rows:
+        center_y = (top_y + bottom_y) / 2.0
+        
+        # 日付行の高さ内（±7pt）にある、表エリア（x >= x_7 - 10）の文字
+        row_chars = [c for c in chars if abs(((c['top'] + c['bottom']) / 2.0) - center_y) < 7 and c['x0'] >= (x_7 - 10)]
+        if not row_chars:
             continue
 
-        row_words = sorted(row_words, key=lambda x: x['x0'])
+        row_chars = sorted(row_chars, key=lambda c: c['x0'])
 
-        # ドット柄などで分断された文字を結合しやすくするため、ギャップ許容値を広げてクラスタリング
+        # ドット模様やノイズを吸収して単語をクラスタリング
         clusters = []
         curr_cluster = []
-        for w in row_words:
+        for c in row_chars:
             if not curr_cluster:
-                curr_cluster.append(w)
+                curr_cluster.append(c)
             else:
-                prev_w = curr_cluster[-1]
-                gap = w['x0'] - prev_w['x1']
-                # 文字同士の間隔が10pt以内なら同一の枠表記と判定
-                if gap < 10.0:
-                    curr_cluster.append(w)
+                prev_c = curr_cluster[-1]
+                # 文字と文字の間隔が 8pt 未満なら同一枠の文字とみなす
+                if (c['x0'] - prev_c['x1']) < 8.0:
+                    curr_cluster.append(c)
                 else:
                     clusters.append(curr_cluster)
-                    curr_cluster = [w]
+                    curr_cluster = [c]
         if curr_cluster:
             clusters.append(curr_cluster)
 
         for cluster in clusters:
-            # 単語を結合し、余計な空白を除去
-            raw_text = "".join([w['text'] for w in cluster]).strip()
-            
-            # ドット柄の記号や微細ノイズを除去して正規化
-            norm_text = re.sub(r'[\s・･\.\-_]', '', raw_text)
+            raw_str = "".join([c['text'] for c in cluster])
+            clean_str = re.sub(r'[^A-Za-z0-9]', '', raw_str).upper()
 
-            # 対象クラスのパターンマッチング (例: S4A, NS4B, N4A, R4C 等)
-            match = re.search(r'(S4|NS4|N4|R4|RC4|FS4|L4|O4)([A-Da-d]?)', norm_text)
+            # 対象枠の判定 (S4, NS4, N4, R4, RC4, FS4, L4, O4) + (A/B/C/D)
+            match = re.search(r'(S4|NS4|N4|R4|RC4|FS4|L4|O4)([ABCD]?)', clean_str)
             if not match:
                 continue
 
             cls_name = match.group(1)
-            group_name = match.group(2).upper()
-            
-            # 正式表記を構築 (例: "S-4 A", "NS-4 B")
+            grp_name = match.group(2)
             formatted_title = f"{cls_name[:-1]}-{cls_name[-1]}"
-            if group_name:
-                formatted_title += f" {group_name}"
+            if grp_name:
+                formatted_title += f" {grp_name}"
 
-            # 枠の左端座標から開始時刻を計算
+            # 枠の左端X座標（文字の開始位置）
             start_x = cluster[0]['x0']
-            offset_hours = (start_x - x_7) / points_per_hour
-            raw_total_minutes = 7 * 60 + (offset_hours * 60)
 
-            # 富士のタイムスケジュール（5分または10分刻み）に最も近い目盛りに丸め
-            minute_step = 5
-            rounded_minutes = int(round(raw_total_minutes / minute_step) * minute_step)
+            # 【重要】枠の中での文字の余白オフセット補正
+            # FSWの表では、枠線の左端から文字開始位置まで約 4〜5pt ほど内側に描画される
+            # そのため文字の左端から少し引いた位置を真の枠開始線とする
+            adjusted_x = start_x - 4.5
 
-            hour = rounded_minutes // 60
-            minute = rounded_minutes % 60
+            # 7:00からの経過時間を分換算
+            total_minutes = 7 * 60 + ((adjusted_x - x_7) / points_per_hour) * 60.0
+
+            # 富士の走行枠は 10分刻み（:00, :10, :20, :30, :40, :50）が基本
+            # 最も近い 10分刻み（または例外的な5分刻み）に丸める
+            snapped_minute = int(round(total_minutes / 10.0) * 10)
+
+            hour = snapped_minute // 60
+            minute = snapped_minute % 60
 
             try:
                 start_dt = datetime(year, month, day, hour, minute)
@@ -166,7 +178,7 @@ def parse_single_page(page):
             except ValueError:
                 continue
 
-    # 同一日の同一枠の重複を排除
+    # 重複排除
     unique_events = []
     seen = set()
     for ev in sorted(page_events, key=lambda x: x['start']):
@@ -176,6 +188,13 @@ def parse_single_page(page):
             unique_events.append(ev)
 
     print(f"  -> {year}年{month}月のページから {len(unique_events)} 件の走行枠を抽出")
+    # 11/2の抽出結果をログに出して検証
+    if month == 11:
+        nov2_events = [e for e in unique_events if e['start'].day == 2]
+        print(f"     [11/2 検証] 抽出件数: {len(nov2_events)} 件")
+        for e in nov2_events:
+            print(f"       - {e['start'].strftime('%H:%M')} {e['summary']}")
+
     return unique_events
 
 def parse_fsw_pdf(pdf_path):
@@ -236,7 +255,3 @@ if __name__ == '__main__':
             print(f"リポジトリ内のバックアップPDFを使用します: {pdf_file}")
         else:
             raise e
-
-    events = parse_fsw_pdf(pdf_file)
-    create_ical(events, output_filename="fsw_calendar.ics")
-    save_events_json(events, output_filename="events.json")
