@@ -74,10 +74,13 @@ def parse_single_page(page, page_num):
 
     print(f"  [解析開始] ページ {page_num} -> {year}年{month}月", flush=True)
 
-    words = page.extract_words(x_tolerance=3, y_tolerance=3)
-    if not words:
+    chars = page.chars
+    if not chars:
         return []
 
+    words = page.extract_words(x_tolerance=3, y_tolerance=3)
+
+    # 7:00 〜 18:00 の目盛りヘッダー座標を特定
     hour_x_map = {}
     for h in range(7, 19):
         pattern = f"{h}:00"
@@ -95,6 +98,7 @@ def parse_single_page(page, page_num):
         x_7 = 205.0
         points_per_hour = 30.8
 
+    # 左端の日付（1〜31）の検出
     day_rows = []
     for d in range(1, 32):
         d_str = str(d)
@@ -116,34 +120,38 @@ def parse_single_page(page, page_num):
         else:
             lower_bound = (bottom_y + day_rows[i+1][1]) / 2.0
 
-        row_words = [w for w in words if upper_bound <= ((w['top'] + w['bottom']) / 2.0) <= lower_bound and w['x0'] >= (x_7 - 15)]
-        if not row_words:
+        # 生の文字オブジェクト（chars）から直接収集（ドット柄を完全に貫通）
+        row_chars = [c for c in chars if upper_bound <= ((c['top'] + c['bottom']) / 2.0) <= lower_bound and c['x0'] >= (x_7 - 15)]
+        if not row_chars:
             continue
 
-        row_words = sorted(row_words, key=lambda w: w['x0'])
+        row_chars = sorted(row_chars, key=lambda c: c['x0'])
 
-        # 次の枠の文字が混ざらないよう、間隔の閾値を 8.0pt に適正化
+        # 文字同士の間隔でクラスタリング（間隔が広すぎない範囲で同一枠を結合）
         clusters = []
         curr = []
-        for w in row_words:
+        for c in row_chars:
             if not curr:
-                curr.append(w)
+                curr.append(c)
             else:
-                prev_w = curr[-1]
-                # S-4 A と S-4 B が連結してしまわないよう距離を調整
-                if (w['x0'] - prev_w['x1']) < 8.0:
-                    curr.append(w)
+                prev_c = curr[-1]
+                # ドットの点（・や . など）は無視
+                if c['text'] in ['・', '･', '.', ' ']:
+                    continue
+                # 文字間隔が 7pt 以内なら同じ枠文字
+                if (c['x0'] - prev_c['x1']) < 7.5:
+                    curr.append(c)
                 else:
                     clusters.append(curr)
-                    curr = [w]
+                    curr = [c]
         if curr:
             clusters.append(curr)
 
         for cluster in clusters:
-            raw_text = "".join([w['text'] for w in cluster])
+            raw_text = "".join([c['text'] for c in cluster])
             clean_str = re.sub(r'[^A-Za-z0-9]', '', raw_text).upper()
 
-            # 枠判定
+            # 枠判定 (S4, NS4, N4, R4, RC4, FS4, L4, O4) + (A/B/C/D)
             match = re.search(r'(S4|NS4|N4|R4|RC4|FS4|L4|O4)([ABCD]?)', clean_str)
             if not match:
                 continue
@@ -154,11 +162,12 @@ def parse_single_page(page, page_num):
             if grp_name:
                 formatted_title += f" {grp_name}"
 
+            # 枠の開始X座標
             start_x = cluster[0]['x0']
             adjusted_x = start_x - 4.0
             total_minutes = 7 * 60 + ((adjusted_x - x_7) / points_per_hour) * 60.0
 
-            # 10分刻みにスナップ
+            # 10分刻み（9:30, 10:10, 10:50, 11:30等）にスナップ
             snapped_minute = int(round(total_minutes / 10.0) * 10)
             hour = snapped_minute // 60
             minute = snapped_minute % 60
@@ -185,10 +194,11 @@ def parse_single_page(page, page_num):
 
     print(f"  -> {year}年{month}月のページから {len(unique_events)} 件の走行枠を抽出完了", flush=True)
     if month == 11:
-        nov7_events = [e for e in unique_events if e['start'].day == 7]
-        print(f"     [11/7 検証] 抽出件数: {len(nov7_events)} 件", flush=True)
-        for e in nov7_events:
-            print(f"       - {e['start'].strftime('%H:%M')} {e['summary']}", flush=True)
+        for chk_day in [2, 7]:
+            chk_events = [e for e in unique_events if e['start'].day == chk_day]
+            print(f"     [11/{chk_day} 検証] 抽出件数: {len(chk_events)} 件", flush=True)
+            for e in chk_events:
+                print(f"       - {e['start'].strftime('%H:%M')} {e['summary']}", flush=True)
 
     return unique_events
 
