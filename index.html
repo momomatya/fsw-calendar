@@ -2,61 +2,129 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>FSW 会員走行カレンダー</title>
   <!-- FullCalendar CDN -->
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
   <style>
+    :root {
+      --s4-color: #ef4444;
+      --ns4-color: #0284c7;
+      --n4-color: #10b981;
+      --r4-color: #f59e0b;
+      --other-color: #64748b;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       margin: 0;
-      padding: 16px;
-      background-color: #f8fafc;
-      color: #1e293b;
+      padding: 8px;
+      background-color: #f1f5f9;
+      color: #0f172a;
     }
     .header {
-      max-width: 1100px;
-      margin: 0 auto 16px auto;
+      max-width: 1000px;
+      margin: 0 auto 8px auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .header-top {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      flex-wrap: wrap;
-      gap: 12px;
     }
     h1 {
-      font-size: 1.4rem;
+      font-size: 1.15rem;
       margin: 0;
       font-weight: 700;
     }
+    .download-link {
+      font-size: 0.8rem;
+      color: #2563eb;
+      text-decoration: none;
+      background: #e0e7ff;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+    /* 絞り込みフィルターバー */
+    .filter-bar {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+    .filter-btn {
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      padding: 4px 10px;
+      border-radius: 16px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .filter-btn.active {
+      background: #0f172a;
+      color: #ffffff;
+      border-color: #0f172a;
+    }
     .calendar-container {
-      max-width: 1100px;
+      max-width: 1000px;
       margin: 0 auto;
       background: #ffffff;
-      padding: 16px;
-      border-radius: 12px;
-      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
+    /* カレンダーヘッダー調整 */
+    .fc-toolbar {
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .fc-toolbar-title {
+      font-size: 1.1rem !important;
+    }
+    .fc-button {
+      padding: 4px 8px !important;
+      font-size: 0.8rem !important;
+    }
+    /* イベント装飾 */
     .fc-event {
       cursor: pointer;
-      font-size: 0.82rem;
-      padding: 2px 4px;
-      border-radius: 4px;
+      font-size: 0.78rem;
+      border-radius: 3px;
       border: none;
     }
-    /* クラス別のカラーリング */
-    .event-s { background-color: #ef4444 !important; }
-    .event-ns { background-color: #3b82f6 !important; }
-    .event-n { background-color: #10b981 !important; }
-    .event-r { background-color: #f59e0b !important; }
-    .event-other { background-color: #64748b !important; }
+    .event-s { background-color: var(--s4-color) !important; }
+    .event-ns { background-color: var(--ns4-color) !important; }
+    .event-n { background-color: var(--n4-color) !important; }
+    .event-r { background-color: var(--r4-color) !important; }
+    .event-other { background-color: var(--other-color) !important; }
+
+    /* リストビュー時の見た目調整 */
+    .fc-list-event-title {
+      font-weight: 600;
+    }
+    .fc-list-day-cushion {
+      background-color: #f8fafc !important;
+    }
   </style>
 </head>
 <body>
 
   <div class="header">
-    <h1>🏁 FSW 会員走行枠カレンダー</h1>
-    <div>
-      <a href="fsw_calendar.ics" style="font-size: 0.9rem; color: #2563eb; text-decoration: none;">📥 iCal (.ics) をダウンロード</a>
+    <div class="header-top">
+      <h1>🏁 FSW 会員走行枠</h1>
+      <a class="download-link" href="fsw_calendar.ics">📥 iCal</a>
+    </div>
+
+    <!-- クラス絞り込みボタン -->
+    <div class="filter-bar">
+      <button class="filter-btn active" onclick="setFilter('ALL', this)">すべて</button>
+      <button class="filter-btn" onclick="setFilter('NS-4', this)" style="color:var(--ns4-color);">NS-4</button>
+      <button class="filter-btn" onclick="setFilter('S-4', this)" style="color:var(--s4-color);">S-4</button>
+      <button class="filter-btn" onclick="setFilter('N-4', this)" style="color:var(--n4-color);">N-4</button>
+      <button class="filter-btn" onclick="setFilter('R-4', this)" style="color:var(--r4-color);">R-4</button>
     </div>
   </div>
 
@@ -65,23 +133,30 @@
   </div>
 
   <script>
+    let calendar;
+    let rawEvents = [];
+    let currentFilter = 'ALL';
+
     document.addEventListener('DOMContentLoaded', function() {
+      const isMobile = window.innerWidth < 768;
       const calendarEl = document.getElementById('calendar');
-      const calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: window.innerWidth < 768 ? 'timeGridDay' : 'dayGridMonth',
+
+      calendar = new FullCalendar.Calendar(calendarEl, {
+        // スマホはリスト表示（listMonth）、PCは月間カレンダー（dayGridMonth）
+        initialView: isMobile ? 'listMonth' : 'dayGridMonth',
         locale: 'ja',
+        height: 'auto',
         headerToolbar: {
           left: 'prev,next today',
           center: 'title',
-          right: 'dayGridMonth,timeGridWeek,timeGridDay'
+          right: isMobile ? 'listMonth,dayGridMonth' : 'dayGridMonth,timeGridWeek,listMonth'
         },
         buttonText: {
           today: '今日',
-          month: '月',
+          month: '月カレンダー',
           week: '週',
-          day: '日'
+          listMonth: 'リスト一覧'
         },
-        events: 'events.json',
         eventClassNames: function(arg) {
           const title = arg.event.title.toUpperCase();
           if (title.includes('NS-4')) return ['event-ns'];
@@ -91,11 +166,40 @@
           return ['event-other'];
         },
         eventClick: function(info) {
-          alert(info.event.title + '\n時間: ' + info.event.start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + ' - ' + info.event.end.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
+          const start = info.event.start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+          const end = info.event.end ? info.event.end.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
+          alert(`${info.event.title}\n時間: ${start} - ${end}`);
         }
       });
+
+      // キャッシュ無効化クエリを付けてJSONを取得
+      fetch('events.json?v=' + new Date().getTime())
+        .then(res => res.json())
+        .then(data => {
+          rawEvents = data;
+          applyFilter();
+        });
+
       calendar.render();
     });
+
+    function setFilter(category, btn) {
+      currentFilter = category;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyFilter();
+    }
+
+    function applyFilter() {
+      if (!calendar) return;
+      calendar.removeAllEvents();
+      
+      const filtered = currentFilter === 'ALL' 
+        ? rawEvents 
+        : rawEvents.filter(ev => ev.title.toUpperCase().includes(currentFilter));
+
+      calendar.addEventSource(filtered);
+    }
   </script>
 </body>
 </html>
