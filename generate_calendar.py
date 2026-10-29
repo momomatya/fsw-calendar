@@ -8,54 +8,62 @@ import pdfplumber
 from icalendar import Calendar, Event
 
 # ================= 設定 =================
-# FSW公式サイトのスケジュール掲載ページ（走行カレンダー）
 CALENDAR_PAGE_URL = "https://www.fsw.tv/driving/calendar/"
-
-# 抽出対象とする主要クラス
-TARGET_PATTERN = re.compile(r'^(NS-4|S-4|N-4|R-4|RC-4|FS-4|L-4|O-4)')
 DEFAULT_DURATION_MINUTES = 30
 # ========================================
 
 def download_latest_fsw_pdf():
     """FSW公式サイトから最新のスポーツ走行PDFのURLを探してダウンロードする"""
+    session = requests.Session()
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+        "Referer": "https://www.fsw.tv/",
+        "Sec-Ch-Ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Upgrade-Insecure-Requests": "1"
     }
+
     print(f"カレンダー掲載ページを取得中: {CALENDAR_PAGE_URL}")
-    res = requests.get(CALENDAR_PAGE_URL, headers=headers)
+    res = session.get(CALENDAR_PAGE_URL, headers=headers, timeout=20)
     res.raise_for_status()
 
     soup = BeautifulSoup(res.text, "html.parser")
     
-    # ページ内のPDFリンクを探す
+    # ページ内のPDFリンクを探索
     pdf_links = []
     for a in soup.find_all("a", href=True):
         href = a["href"]
         if ".pdf" in href.lower():
             full_url = urllib.parse.urljoin(CALENDAR_PAGE_URL, href)
-            # レーシングコース、スポーツ走行、カレンダー等の関連キーワードで判定
             link_text = a.get_text()
-            if any(k in href or k in link_text for k in ["sports", "calendar", "racing", "走行"]):
+            # スポーツ走行・レーシングコース・カレンダー等のキーワード判定
+            if any(k in href.lower() or k in link_text for k in ["sports", "calendar", "racing", "走行", "コース"]):
                 pdf_links.append(full_url)
 
     if not pdf_links:
-        # 見つからない場合はPDFリンクの先頭を取得
         all_pdfs = [urllib.parse.urljoin(CALENDAR_PAGE_URL, a["href"]) for a in soup.find_all("a", href=True) if ".pdf" in a["href"].lower()]
         if not all_pdfs:
-            raise Exception("ページ内から走行カレンダーのPDFリンクが見つかりませんでした。")
+            raise Exception("ページ内からPDFリンクが見つかりませんでした。")
         target_url = all_pdfs[0]
     else:
         target_url = pdf_links[0]
 
     print(f"対象PDFのURL: {target_url}")
-    pdf_res = requests.get(target_url, headers=headers)
+    headers["Referer"] = CALENDAR_PAGE_URL
+    pdf_res = session.get(target_url, headers=headers, timeout=30)
     pdf_res.raise_for_status()
 
-    local_pdf = "latest_calendar.pdf"
+    local_pdf = "downloaded_calendar.pdf"
     with open(local_pdf, "wb") as f:
         f.write(pdf_res.content)
     
-    print(f"PDFのダウンロード完了: {local_pdf}")
+    print(f"PDFダウンロード成功: {local_pdf}")
     return local_pdf
 
 def parse_fsw_pdf(pdf_path):
@@ -173,15 +181,18 @@ def create_ical(events, output_filename="fsw_calendar.ics"):
     print(f"\n[成功] カレンダー生成完了: {output_filename} (合計 {len(events)} 件)")
 
 if __name__ == '__main__':
+    pdf_file = None
     try:
         pdf_file = download_latest_fsw_pdf()
     except Exception as e:
-        print(f"Webからの取得に失敗したため、ローカルのPDFを探します: {e}")
+        print(f"Webからの取得をスキップ（または失敗）: {e}")
         import glob
         local_pdfs = glob.glob("*.pdf")
-        if not local_pdfs:
+        if local_pdfs:
+            pdf_file = local_pdfs[0]
+            print(f"リポジトリ内の既存PDFを使用します: {pdf_file}")
+        else:
             raise e
-        pdf_file = local_pdfs[0]
 
     events = parse_fsw_pdf(pdf_file)
     create_ical(events, output_filename="fsw_calendar.ics")
