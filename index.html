@@ -2,14 +2,15 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>FSW 会員走行カレンダー</title>
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
+    /* 月カレンダー時のイベントバッジ調整 */
     .fc-event {
       cursor: pointer;
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       border: none !important;
       border-radius: 4px;
       padding: 1px 3px;
@@ -18,38 +19,53 @@
     .fc-event-title {
       font-weight: 600;
     }
+    .fc-event-time {
+      display: none !important;
+    }
+    /* スマホのリストビューをすっきり見やすく調整 */
+    .fc-list-event-time {
+      display: none !important;
+    }
+    .fc-list-event-title {
+      font-weight: bold;
+      font-size: 0.9rem;
+    }
+    .fc-list-day-cushion {
+      background-color: #f1f5f9 !important;
+      font-weight: bold;
+      font-size: 0.85rem;
+    }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-800">
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen">
 
-  <div class="max-w-6xl mx-auto p-3 sm:p-6">
-    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+  <div class="max-w-4xl mx-auto px-2 py-3 sm:p-6">
+    <!-- ヘッダー -->
+    <div class="flex items-center justify-between gap-2 mb-3 bg-white p-3 rounded-xl shadow-sm border border-slate-200">
       <div>
-        <h1 class="text-xl sm:text-2xl font-bold flex items-center gap-2">
-          🏁 FSW 会員走行枠
+        <h1 class="text-base sm:text-xl font-bold flex items-center gap-1.5">
+          🏁 FSW 走行枠
         </h1>
-        <p class="text-xs text-slate-500 mt-1">富士スピードウェイ レーシングコース（RC）</p>
+        <p class="text-[11px] text-slate-500">レーシングコース（RC）</p>
       </div>
 
-      <div class="flex items-center gap-2">
-        <a href="fsw_calendar.ics" download class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg shadow-sm transition">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-          iCal連携
-        </a>
-      </div>
+      <a href="fsw_calendar.ics" download class="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg shadow-sm transition">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        iCal登録
+      </a>
     </div>
 
-    <!-- フィルターボタン -->
-    <div class="flex flex-wrap gap-1.5 mb-4 text-xs font-semibold" id="filter-container">
-      <button onclick="filterCategory('ALL')" id="btn-ALL" class="px-3 py-1 rounded-full bg-slate-900 text-white shadow">すべて</button>
-      <button onclick="filterCategory('NS-4')" id="btn-NS-4" class="px-3 py-1 rounded-full bg-cyan-100 text-cyan-800 border border-cyan-300">NS-4</button>
-      <button onclick="filterCategory('S-4')" id="btn-S-4" class="px-3 py-1 rounded-full bg-red-100 text-red-800 border border-red-300">S-4</button>
-      <button onclick="filterCategory('N-4')" id="btn-N-4" class="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">N-4</button>
-      <button onclick="filterCategory('R-4')" id="btn-R-4" class="px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300">R-4</button>
+    <!-- 絞り込みフィルター（横スクロール可能） -->
+    <div class="flex items-center gap-1.5 overflow-x-auto pb-2 mb-2 no-scrollbar" id="filter-container">
+      <button onclick="filterCategory('ALL')" id="btn-ALL" class="whitespace-nowrap px-3 py-1 text-xs rounded-full bg-slate-900 text-white shadow font-semibold">すべて</button>
+      <button onclick="filterCategory('S-4')" id="btn-S-4" class="whitespace-nowrap px-3 py-1 text-xs rounded-full bg-white text-red-600 border border-slate-300 font-semibold">S-4</button>
+      <button onclick="filterCategory('NS-4')" id="btn-NS-4" class="whitespace-nowrap px-3 py-1 text-xs rounded-full bg-white text-cyan-600 border border-slate-300 font-semibold">NS-4</button>
+      <button onclick="filterCategory('N-4')" id="btn-N-4" class="whitespace-nowrap px-3 py-1 text-xs rounded-full bg-white text-emerald-600 border border-slate-300 font-semibold">N-4</button>
+      <button onclick="filterCategory('R-4')" id="btn-R-4" class="whitespace-nowrap px-3 py-1 text-xs rounded-full bg-white text-amber-600 border border-slate-300 font-semibold">R-4</button>
     </div>
 
-    <!-- カレンダー本体 -->
-    <div class="bg-white p-3 sm:p-5 rounded-2xl shadow-sm border border-slate-200">
+    <!-- カレンダー表示エリア -->
+    <div class="bg-white p-2 sm:p-4 rounded-xl shadow-sm border border-slate-200">
       <div id="calendar"></div>
     </div>
   </div>
@@ -77,31 +93,38 @@
         console.error('イベント取得エラー:', e);
       }
 
+      // スマホ（幅768px未満）なら「リスト一覧」、PCなら「月カレンダー」を初期表示
+      const isMobile = window.innerWidth < 768;
+      const defaultView = isMobile ? 'listMonth' : 'dayGridMonth';
+
       calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'dayGridMonth',
+        initialView: defaultView,
         locale: 'ja',
+        height: 'auto',
         headerToolbar: {
           left: 'prev,next today',
           center: 'title',
-          right: 'dayGridMonth,timeGridWeek,listMonth'
+          right: isMobile ? 'listMonth,dayGridMonth' : 'dayGridMonth,timeGridWeek,listMonth'
         },
         buttonText: {
-          today: '今日',
-          month: '月カレンダー',
+          today: '今月',
+          month: '月',
           week: '週',
-          list: 'リスト一覧'
-        },
-        // 00分でも省略させず、常に "8:00" 形式で表示
-        eventTimeFormat: {
-          hour: 'numeric',
-          minute: '2-digit',
-          omitZeroMinute: false,
-          meridiem: false,
-          hour12: false
+          list: 'リスト'
         },
         events: getFilteredEvents(),
         eventDidMount: function(info) {
-          info.el.style.backgroundColor = getEventColor(info.event.title);
+          // 月表示のバッジ色
+          if (info.view.type.startsWith('dayGrid')) {
+            info.el.style.backgroundColor = getEventColor(info.event.title);
+          }
+          // リスト表示時のドット色
+          if (info.view.type.startsWith('list')) {
+            const dot = info.el.querySelector('.fc-list-event-dot');
+            if (dot) {
+              dot.style.borderColor = getEventColor(info.event.title);
+            }
+          }
         }
       });
 
@@ -110,17 +133,20 @@
 
     function getFilteredEvents() {
       if (currentFilter === 'ALL') return allEvents;
-      return allEvents.filter(ev => ev.title.includes(currentFilter));
+      return allEvents.filter(ev => {
+        const target = ev.raw_summary || ev.title;
+        return target.includes(currentFilter);
+      });
     }
 
     function filterCategory(cat) {
       currentFilter = cat;
       document.querySelectorAll('#filter-container button').forEach(b => {
-        b.className = "px-3 py-1 rounded-full bg-white text-slate-700 border border-slate-300";
+        b.className = "whitespace-nowrap px-3 py-1 text-xs rounded-full bg-white text-slate-700 border border-slate-300 font-semibold";
       });
       const activeBtn = document.getElementById('btn-' + cat);
       if (activeBtn) {
-        activeBtn.className = "px-3 py-1 rounded-full bg-slate-900 text-white shadow";
+        activeBtn.className = "whitespace-nowrap px-3 py-1 text-xs rounded-full bg-slate-900 text-white shadow font-semibold";
       }
       calendar.removeAllEvents();
       calendar.addEventSource(getFilteredEvents());
