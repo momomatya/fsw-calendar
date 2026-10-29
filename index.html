@@ -52,11 +52,10 @@
       </a>
     </div>
 
-    <!-- 絞り込みフィルター（L-4 を追加） -->
+    <!-- 絞り込みフィルター（NS-4 を削除） -->
     <div class="flex items-center gap-1.5 overflow-x-auto pb-2 mb-2 no-scrollbar" id="filter-container">
       <button onclick="filterCategory('ALL')" id="btn-ALL" class="whitespace-nowrap px-3 py-1 text-xs rounded-full bg-slate-900 text-white shadow font-semibold">すべて</button>
       <button onclick="filterCategory('S-4')" id="btn-S-4" class="whitespace-nowrap px-3 py-1 text-xs rounded-full bg-white text-red-600 border border-slate-300 font-semibold">S-4</button>
-      <button onclick="filterCategory('NS-4')" id="btn-NS-4" class="whitespace-nowrap px-3 py-1 text-xs rounded-full bg-white text-cyan-600 border border-slate-300 font-semibold">NS-4</button>
       <button onclick="filterCategory('N-4')" id="btn-N-4" class="whitespace-nowrap px-3 py-1 text-xs rounded-full bg-white text-emerald-600 border border-slate-300 font-semibold">N-4</button>
       <button onclick="filterCategory('R-4')" id="btn-R-4" class="whitespace-nowrap px-3 py-1 text-xs rounded-full bg-white text-amber-600 border border-slate-300 font-semibold">R-4</button>
       <button onclick="filterCategory('L-4')" id="btn-L-4" class="whitespace-nowrap px-3 py-1 text-xs rounded-full bg-white text-pink-600 border border-slate-300 font-semibold">L-4</button>
@@ -73,11 +72,10 @@
     let currentFilter = 'ALL';
 
     function getEventColor(title) {
-      if (title.includes('S-4')) return '#ef4444';
-      if (title.includes('NS-4')) return '#06b6d4';
-      if (title.includes('N-4')) return '#10b981';
-      if (title.includes('R-4')) return '#f59e0b';
-      if (title.includes('L-4')) return '#ec4899'; // L-4: ピンク（ローズ）
+      if (title.includes('S-4')) return '#ef4444'; // 赤
+      if (title.includes('N-4')) return '#10b981'; // 緑
+      if (title.includes('R-4')) return '#f59e0b'; // オレンジ
+      if (title.includes('L-4')) return '#ec4899'; // ピンク
       return '#64748b';
     }
 
