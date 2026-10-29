@@ -11,8 +11,9 @@ from icalendar import Calendar, Event
 
 sys.stdout.reconfigure(line_buffering=True)
 
-# 探索対象のFSW公式ページ候補
+# 探索対象のFSW公式ページ候補（2026年一覧ページを追加）
 TARGET_PAGE_URLS = [
+    "https://www.fsw.tv/driving/calendar/2026/",
     "https://www.fsw.tv/driving/calendar/",
     "https://www.fsw.tv/driving/sports/racing.html",
     "https://www.fsw.tv/driving/sports/index.html",
@@ -53,10 +54,11 @@ def download_latest_fsw_pdf():
         if len(html_content) < 500:
             continue
 
-        # .pdf のリンクをすべて抽出（相対パス・パラメータ付き含む）
-        found_links = re.findall(r'href=["\']([^"\']+\.pdf(?:\?[^"\']*)?)["\']', html_content, re.IGNORECASE)
+        # href属性、src属性、または文字列中に現れる .pdf を網羅的に抽出
+        found_links = re.findall(r'["\']([^"\']+\.pdf(?:\?[^"\']*)?)["\']', html_content, re.IGNORECASE)
         for link in found_links:
-            full_url = urllib.parse.urljoin(page_url, link)
+            # 相対パスを完全なURLに正規化
+            full_url = urllib.parse.urljoin(page_url, link.strip())
             if full_url not in pdf_candidates:
                 pdf_candidates.append(full_url)
 
@@ -64,22 +66,37 @@ def download_latest_fsw_pdf():
     for p in pdf_candidates:
         print(f"  - 候補: {p}", flush=True)
 
-    if not pdf_candidates:
-        raise Exception("FSW公式サイト内からPDFリンクが検出できませんでした。")
-
-    # レーシングコース（RC）やスポーツ走行用のPDFを優先
+    # 優先順位付けロジック
+    # 1. "calendar.pdf" かつ "short"/"kart" を含まないもの
+    # 2. "racing" または "sports" を含み "short"/"kart" を含まないもの
     target_url = None
     for p in pdf_candidates:
         p_lower = p.lower()
-        # ショート(short)やカート(kart)を除外
-        if "short" in p_lower or "kart" in p_lower:
+        if "short" in p_lower or "kart" in p_lower or "bicycle" in p_lower or "license" in p_lower:
             continue
-        if any(k in p_lower for k in ["racing", "rc", "sports", "calendar", "soukou", "schedule"]):
+        if "calendar.pdf" in p_lower:
             target_url = p
             break
 
     if not target_url:
-        target_url = pdf_candidates[0]
+        for p in pdf_candidates:
+            p_lower = p.lower()
+            if "short" in p_lower or "kart" in p_lower or "bicycle" in p_lower or "license" in p_lower:
+                continue
+            if any(k in p_lower for k in ["racing", "sports", "soukou", "schedule"]):
+                target_url = p
+                break
+
+    if not target_url and pdf_candidates:
+        # 除外キーワードを含まない最初の候補
+        for p in pdf_candidates:
+            p_lower = p.lower()
+            if not any(ex in p_lower for ex in ["short", "kart", "bicycle", "license"]):
+                target_url = p
+                break
+
+    if not target_url:
+        raise Exception("FSW公式サイト内からカレンダーPDFリンクを特定できませんでした。")
 
     print(f"ダウンロード対象PDFを決定: {target_url}", flush=True)
     local_pdf = "downloaded_calendar.pdf"
