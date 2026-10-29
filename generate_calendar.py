@@ -187,10 +187,12 @@ def parse_single_page(page, page_num):
             unique_events.append(ev)
 
     print(f"  -> {year}年{month}月のページから {len(unique_events)} 件の走行枠を抽出完了", flush=True)
-    # L-4 枠の検出ログ
+
+    # 安全な文字列フォーマットでログ出力
     l4_events = [e for e in unique_events if "L-4" in e['summary']]
     if l4_events:
-        print(f"     [L-4 検出] {len(l4_events)} 件: {', '.join([f'{e[\"start\"].day}日 {e[\"time_str\"]}' for e in l4_events])}", flush=True)
+        details = ", ".join([str(e['start'].day) + "日 " + e['time_str'] for e in l4_events])
+        print(f"     [L-4 検出] {len(l4_events)} 件: {details}", flush=True)
 
     return unique_events
 
