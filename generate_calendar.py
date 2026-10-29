@@ -96,7 +96,7 @@ def parse_single_page(page, page_num):
         x_7 = 205.0
         points_per_hour = 30.8
 
-    # 左端の日付（1〜31）の検出範囲を広げる（x0 < 90、top > 50）
+    # 左端の日付（1〜31）の検出
     day_rows = []
     for d in range(1, 32):
         d_str = str(d)
@@ -105,12 +105,10 @@ def parse_single_page(page, page_num):
             chosen = min(d_words, key=lambda w: w['x0'])
             day_rows.append((d, chosen['top'], chosen['bottom']))
 
-    # 日付順（Y座標順）に並べ替え
     day_rows = sorted(day_rows, key=lambda x: x[1])
     print(f"     検出された日付行数: {len(day_rows)} 日分", flush=True)
 
     for i, (day, top_y, bottom_y) in enumerate(day_rows):
-        # 行の上下範囲を前後の日付行の中間まで動的に割り当て
         if i == 0:
             upper_bound = top_y - 5
         else:
@@ -121,14 +119,14 @@ def parse_single_page(page, page_num):
         else:
             lower_bound = (bottom_y + day_rows[i+1][1]) / 2.0
 
-        # 当該日付行の文字群を抽出（時間軸エリア：x0 >= x_7 - 15）
+        # 当該日付行の文字群を抽出
         row_words = [w for w in words if upper_bound <= ((w['top'] + w['bottom']) / 2.0) <= lower_bound and w['x0'] >= (x_7 - 15)]
         if not row_words:
             continue
 
         row_words = sorted(row_words, key=lambda w: w['x0'])
 
-        # 単語同士が近ければクラスタリング（網掛けで分断された文字を再結合）
+        # クラスタリング
         clusters = []
         curr = []
         for w in row_words:
@@ -148,11 +146,123 @@ def parse_single_page(page, page_num):
             raw_text = "".join([w['text'] for w in cluster])
             clean_str = re.sub(r'[^A-Za-z0-9]', '', raw_text).upper()
 
-            # クラス名のパターンマッチ
             match = re.search(r'(S4|NS4|N4|R4|RC4|FS4|L4|O4)([ABCD]?)', clean_str)
             if not match:
                 continue
 
             cls_name = match.group(1)
             grp_name = match.group(2)
-            formatted_title = f"{cls_name[:-1]}-{cls_
+            formatted_title = f"{cls_name[:-1]}-{cls_name[-1]}"
+            if grp_name:
+                formatted_title += f" {grp_name}"
+
+            start_x = cluster[0]['x0']
+            adjusted_x = start_x - 4.0
+            total_minutes = 7 * 60 + ((adjusted_x - x_7) / points_per_hour) * 60.0
+
+            # 10分刻み（9:30, 10:10, 10:50, 11:30等）にスナップ
+            snapped_minute = int(round(total_minutes / 10.0) * 10)
+            hour = snapped_minute // 60
+            minute = snapped_minute % 60
+
+            try:
+                start_dt = datetime(year, month, day, hour, minute)
+                end_dt = start_dt + timedelta(minutes=DEFAULT_DURATION_MINUTES)
+                page_events.append({
+                    "summary": formatted_title,
+                    "start": start_dt,
+                    "end": end_dt,
+                    "description": f"富士スピードウェイ レーシングコース スポーツ走行枠\n枠名: {formatted_title}"
+                })
+            except ValueError:
+                continue
+
+    unique_events = []
+    seen = set()
+    for ev in sorted(page_events, key=lambda x: x['start']):
+        key = (ev['start'], ev['summary'])
+        if key not in seen:
+            seen.add(key)
+            unique_events.append(ev)
+
+    print(f"  -> {year}年{month}月のページから {len(unique_events)} 件の走行枠を抽出完了", flush=True)
+    if month == 11:
+        nov2_events = [e for e in unique_events if e['start'].day == 2]
+        print(f"     [11/2 検証] 抽出件数: {len(nov2_events)} 件", flush=True)
+        for e in nov2_events:
+            print(f"       - {e['start'].strftime('%H:%M')} {e['summary']}", flush=True)
+
+    return unique_events
+
+def parse_fsw_pdf(pdf_path):
+    print(f"=== PDF解析開始: {pdf_path} ===", flush=True)
+    all_events = []
+    with pdfplumber.open(pdf_path) as pdf:
+        print(f"PDF総ページ数: {len(pdf.pages)}", flush=True)
+        for idx, page in enumerate(pdf.pages):
+            text = page.extract_text() or ""
+            if ("レーシング" in text or "RC" in text or "コース" in text) and ("予定" in text or "カレンダー" in text or "走行" in text):
+                events = parse_single_page(page, idx + 1)
+                all_events.extend(events)
+            else:
+                first_line = text.split('\n')[0] if text else "(テキストなし)"
+                print(f"  [対象外ページ] ページ {idx + 1}: {first_line[:40]}", flush=True)
+
+    return all_events
+
+def create_ical(events, output_filename="fsw_calendar.ics"):
+    cal = Calendar()
+    cal.add('prodid', '-//FSW Member Track Calendar//JP')
+    cal.add('version', '2.0')
+
+    for ev in events:
+        event = Event()
+        event.add('summary', f"FSW {ev['summary']}")
+        event.add('dtstart', ev['start'])
+        event.add('dtend', ev['end'])
+        event.add('description', ev['description'])
+        event.add('location', '富士スピードウェイ')
+        cal.add_component(event)
+
+    with open(output_filename, 'wb') as f:
+        f.write(cal.to_ical())
+    print(f"[成功] iCalカレンダー生成完了: {output_filename}", flush=True)
+
+def save_events_json(events, output_filename="events.json"):
+    web_events = []
+    for ev in events:
+        start_str = ev["start"].strftime("%Y-%m-%dT%H:%M:%S")
+        end_str = ev["end"].strftime("%Y-%m-%dT%H:%M:%S")
+        web_events.append({
+            "title": ev["summary"],
+            "start": start_str,
+            "end": end_str,
+            "description": ev["description"]
+        })
+    with open(output_filename, "w", encoding="utf-8") as f:
+        json.dump(web_events, f, ensure_ascii=False, indent=2)
+    print(f"[成功] Web用JSON生成完了: {output_filename} (合計 {len(web_events)} 件)", flush=True)
+
+def main():
+    print("=== スクリプト実行開始 ===", flush=True)
+    local_pdfs = [f for f in glob.glob("*.pdf") if "downloaded" not in f]
+    print(f"リポジトリ内の検出PDF一覧: {local_pdfs}", flush=True)
+
+    pdf_file = None
+    try:
+        pdf_file = download_latest_fsw_pdf()
+    except Exception as e:
+        print(f"Web自動取得をスキップ（または失敗）: {e}", flush=True)
+        if local_pdfs:
+            pdf_file = sorted(local_pdfs, key=lambda x: os.path.getsize(x), reverse=True)[0]
+            print(f"リポジトリ内のバックアップPDFを使用します: {pdf_file} (サイズ: {os.path.getsize(pdf_file)} bytes)", flush=True)
+        else:
+            raise e
+
+    events = parse_fsw_pdf(pdf_file)
+    create_ical(events, output_filename="fsw_calendar.ics")
+    save_events_json(events, output_filename="events.json")
+    print("=== スクリプト全処理完了 ===", flush=True)
+
+if __name__ == '__main__':
+    main()
