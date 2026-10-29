@@ -231,4 +231,41 @@ def create_ical(events, output_filename="fsw_calendar.ics"):
         f.write(cal.to_ical())
     print(f"[成功] iCalカレンダー生成完了: {output_filename}", flush=True)
 
-def save_
+def save_events_json(events, output_filename="events.json"):
+    web_events = []
+    for ev in events:
+        start_str = ev["start"].strftime("%Y-%m-%dT%H:%M:%S")
+        end_str = ev["end"].strftime("%Y-%m-%dT%H:%M:%S")
+        web_events.append({
+            "title": ev["summary"],
+            "start": start_str,
+            "end": end_str,
+            "description": ev["description"]
+        })
+    with open(output_filename, "w", encoding="utf-8") as f:
+        json.dump(web_events, f, ensure_ascii=False, indent=2)
+    print(f"[成功] Web用JSON生成完了: {output_filename} (合計 {len(web_events)} 件)", flush=True)
+
+def main():
+    print("=== スクリプト実行開始 ===", flush=True)
+    local_pdfs = [f for f in glob.glob("*.pdf") if "downloaded" not in f]
+    print(f"リポジトリ内の検出PDF一覧: {local_pdfs}", flush=True)
+
+    pdf_file = None
+    try:
+        pdf_file = download_latest_fsw_pdf()
+    except Exception as e:
+        print(f"Web自動取得をスキップ（または失敗）: {e}", flush=True)
+        if local_pdfs:
+            pdf_file = sorted(local_pdfs, key=lambda x: os.path.getsize(x), reverse=True)[0]
+            print(f"リポジトリ内のバックアップPDFを使用します: {pdf_file} (サイズ: {os.path.getsize(pdf_file)} bytes)", flush=True)
+        else:
+            raise e
+
+    events = parse_fsw_pdf(pdf_file)
+    create_ical(events, output_filename="fsw_calendar.ics")
+    save_events_json(events, output_filename="events.json")
+    print("=== スクリプト全処理完了 ===", flush=True)
+
+if __name__ == '__main__':
+    main()
