@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import subprocess
@@ -7,13 +8,11 @@ import pdfplumber
 from icalendar import Calendar, Event
 
 # ================= 設定 =================
-# FSWスポーツ走行枠の掲載ページURL
 CALENDAR_PAGE_URL = "https://www.fsw.tv/driving/calendar/"
 DEFAULT_DURATION_MINUTES = 30
 # ========================================
 
 def run_curl(url, output_path=None):
-    """curlコマンドを使ってブラウザになりすまして取得する"""
     cmd = [
         "curl", "-sL",
         "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -32,13 +31,10 @@ def run_curl(url, output_path=None):
         return result.stdout
 
 def download_latest_fsw_pdf():
-    """FSW公式サイトから最新の走行カレンダーPDFを探してダウンロードする"""
     print(f"カレンダー掲載ページを取得中: {CALENDAR_PAGE_URL}")
     html_content = run_curl(CALENDAR_PAGE_URL)
 
-    # ページ内のリンクからPDFを探す
     pdf_urls = re.findall(r'href=["\'](.*?\.pdf)["\']', html_content, re.IGNORECASE)
-    
     if not pdf_urls:
         raise Exception("カレンダーページからPDFリンクが検出できませんでした。")
 
@@ -56,7 +52,6 @@ def download_latest_fsw_pdf():
     local_pdf = "downloaded_calendar.pdf"
     run_curl(full_url, output_path=local_pdf)
     
-    # ダウンロードしたファイルが有効なPDFかサイズ判定
     if os.path.exists(local_pdf) and os.path.getsize(local_pdf) > 5000:
         print(f"PDFダウンロード成功: {local_pdf}")
         return local_pdf
@@ -149,7 +144,7 @@ def parse_fsw_pdf(pdf_path):
                     start_dt = datetime(year, month, day, hour, minute)
                     end_dt = start_dt + timedelta(minutes=DEFAULT_DURATION_MINUTES)
                     events.append({
-                        "summary": f"FSW {text}",
+                        "summary": f"{text}",
                         "start": start_dt,
                         "end": end_dt,
                         "description": f"富士スピードウェイ レーシングコース スポーツ走行枠\n枠名: {text}"
@@ -166,7 +161,7 @@ def create_ical(events, output_filename="fsw_calendar.ics"):
 
     for ev in events:
         event = Event()
-        event.add('summary', ev['summary'])
+        event.add('summary', f"FSW {ev['summary']}")
         event.add('dtstart', ev['start'])
         event.add('dtend', ev['end'])
         event.add('description', ev['description'])
@@ -175,7 +170,21 @@ def create_ical(events, output_filename="fsw_calendar.ics"):
 
     with open(output_filename, 'wb') as f:
         f.write(cal.to_ical())
-    print(f"\n[成功] カレンダー生成完了: {output_filename} (合計 {len(events)} 件)")
+    print(f"[成功] iCalカレンダー生成完了: {output_filename}")
+
+def save_events_json(events, output_filename="events.json"):
+    """Webフロントエンド（FullCalendar等）で読み込めるJSON形式で保存"""
+    web_events = []
+    for ev in events:
+        web_events.append({
+            "title": ev["summary"],
+            "start": ev["start"].strftime("%Y-%m-%dT%H:%M:%S"),
+            "end": ev["end"].strftime("%Y-%m-%dT%H:%M:%S"),
+            "description": ev["description"]
+        })
+    with open(output_filename, "w", encoding="utf-8") as f:
+        json.dump(web_events, f, ensure_ascii=False, indent=2)
+    print(f"[成功] Web用JSON生成完了: {output_filename} (合計 {len(web_events)} 件)")
 
 if __name__ == '__main__':
     pdf_file = None
@@ -193,3 +202,4 @@ if __name__ == '__main__':
 
     events = parse_fsw_pdf(pdf_file)
     create_ical(events, output_filename="fsw_calendar.ics")
+    save_events_json(events, output_filename="events.json")
