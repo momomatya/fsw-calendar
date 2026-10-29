@@ -11,13 +11,13 @@ from icalendar import Calendar, Event
 
 sys.stdout.reconfigure(line_buffering=True)
 
-# 探索対象のFSW公式ページ候補（2026年一覧ページを追加）
+# FSW公式レーシングコース予定表PDFの直URL
+DIRECT_PDF_URL = "https://www.fsw.tv/driving/calendar/docs/calendar.pdf"
+
 TARGET_PAGE_URLS = [
     "https://www.fsw.tv/driving/calendar/2026/",
     "https://www.fsw.tv/driving/calendar/",
     "https://www.fsw.tv/driving/sports/racing.html",
-    "https://www.fsw.tv/driving/sports/index.html",
-    "https://www.fsw.tv/driving/"
 ]
 DEFAULT_DURATION_MINUTES = 30
 
@@ -40,73 +40,48 @@ def run_curl(url, output_path=None):
         return result.stdout
 
 def download_latest_fsw_pdf():
-    pdf_candidates = []
+    local_pdf = "downloaded_calendar.pdf"
 
+    # 1. 最優先: 公式固定URLからの直接ダウンロード
+    print(f"富士スピードウェイ公式PDFを直接取得中: {DIRECT_PDF_URL}", flush=True)
+    try:
+        run_curl(DIRECT_PDF_URL, output_path=local_pdf)
+        if os.path.exists(local_pdf) and os.path.getsize(local_pdf) > 20000:
+            print(f"[成功] 公式最新PDFの直接取得に成功しました: {local_pdf} (サイズ: {os.path.getsize(local_pdf)} bytes)", flush=True)
+            return local_pdf
+    except Exception as e:
+        print(f"直接取得に失敗、ページ内探索にフォールバックします: {e}", flush=True)
+
+    # 2. フォールバック: 各掲載ページ内のPDF探索
+    pdf_candidates = []
     for page_url in TARGET_PAGE_URLS:
         print(f"カレンダー掲載ページを確認中: {page_url}", flush=True)
         try:
             html_content = run_curl(page_url)
-        except Exception as e:
-            print(f"  [警告] ページアクセス失敗: {e}", flush=True)
+        except Exception:
             continue
 
-        print(f"  取得HTMLサイズ: {len(html_content)} bytes", flush=True)
-        if len(html_content) < 500:
-            continue
-
-        # href属性、src属性、または文字列中に現れる .pdf を網羅的に抽出
         found_links = re.findall(r'["\']([^"\']+\.pdf(?:\?[^"\']*)?)["\']', html_content, re.IGNORECASE)
         for link in found_links:
-            # 相対パスを完全なURLに正規化
             full_url = urllib.parse.urljoin(page_url, link.strip())
             if full_url not in pdf_candidates:
                 pdf_candidates.append(full_url)
 
-    print(f"検出されたPDFリンク総数: {len(pdf_candidates)} 件", flush=True)
-    for p in pdf_candidates:
-        print(f"  - 候補: {p}", flush=True)
-
-    # 優先順位付けロジック
-    # 1. "calendar.pdf" かつ "short"/"kart" を含まないもの
-    # 2. "racing" または "sports" を含み "short"/"kart" を含まないもの
     target_url = None
     for p in pdf_candidates:
         p_lower = p.lower()
-        if "short" in p_lower or "kart" in p_lower or "bicycle" in p_lower or "license" in p_lower:
-            continue
-        if "calendar.pdf" in p_lower:
+        if "calendar.pdf" in p_lower and "short" not in p_lower and "kart" not in p_lower:
             target_url = p
             break
 
-    if not target_url:
-        for p in pdf_candidates:
-            p_lower = p.lower()
-            if "short" in p_lower or "kart" in p_lower or "bicycle" in p_lower or "license" in p_lower:
-                continue
-            if any(k in p_lower for k in ["racing", "sports", "soukou", "schedule"]):
-                target_url = p
-                break
+    if target_url:
+        print(f"フォールバックURLでダウンロード中: {target_url}", flush=True)
+        run_curl(target_url, output_path=local_pdf)
+        if os.path.exists(local_pdf) and os.path.getsize(local_pdf) > 20000:
+            print(f"[成功] PDFダウンロード成功: {local_pdf} (サイズ: {os.path.getsize(local_pdf)} bytes)", flush=True)
+            return local_pdf
 
-    if not target_url and pdf_candidates:
-        # 除外キーワードを含まない最初の候補
-        for p in pdf_candidates:
-            p_lower = p.lower()
-            if not any(ex in p_lower for ex in ["short", "kart", "bicycle", "license"]):
-                target_url = p
-                break
-
-    if not target_url:
-        raise Exception("FSW公式サイト内からカレンダーPDFリンクを特定できませんでした。")
-
-    print(f"ダウンロード対象PDFを決定: {target_url}", flush=True)
-    local_pdf = "downloaded_calendar.pdf"
-    run_curl(target_url, output_path=local_pdf)
-
-    if os.path.exists(local_pdf) and os.path.getsize(local_pdf) > 5000:
-        print(f"PDFダウンロード成功: {local_pdf} (サイズ: {os.path.getsize(local_pdf)} bytes)", flush=True)
-        return local_pdf
-    else:
-        raise Exception("ダウンロードされたPDFが空、またはアクセス制限を受けました。")
+    raise Exception("FSW公式サイトから最新カレンダーPDFを取得できませんでした。")
 
 def parse_single_page(page, page_num):
     page_events = []
