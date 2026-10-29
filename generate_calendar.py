@@ -1,70 +1,67 @@
 import os
 import re
+import subprocess
 import urllib.parse
 from datetime import datetime, timedelta
-import requests
-from bs4 import BeautifulSoup
 import pdfplumber
 from icalendar import Calendar, Event
 
 # ================= 設定 =================
+# FSWスポーツ走行枠の掲載ページURL
 CALENDAR_PAGE_URL = "https://www.fsw.tv/driving/calendar/"
 DEFAULT_DURATION_MINUTES = 30
 # ========================================
 
-def download_latest_fsw_pdf():
-    """FSW公式サイトから最新のスポーツ走行PDFのURLを探してダウンロードする"""
-    session = requests.Session()
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
-        "Referer": "https://www.fsw.tv/",
-        "Sec-Ch-Ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"Windows"',
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "same-origin",
-        "Upgrade-Insecure-Requests": "1"
-    }
-
-    print(f"カレンダー掲載ページを取得中: {CALENDAR_PAGE_URL}")
-    res = session.get(CALENDAR_PAGE_URL, headers=headers, timeout=20)
-    res.raise_for_status()
-
-    soup = BeautifulSoup(res.text, "html.parser")
-    
-    # ページ内のPDFリンクを探索
-    pdf_links = []
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if ".pdf" in href.lower():
-            full_url = urllib.parse.urljoin(CALENDAR_PAGE_URL, href)
-            link_text = a.get_text()
-            # スポーツ走行・レーシングコース・カレンダー等のキーワード判定
-            if any(k in href.lower() or k in link_text for k in ["sports", "calendar", "racing", "走行", "コース"]):
-                pdf_links.append(full_url)
-
-    if not pdf_links:
-        all_pdfs = [urllib.parse.urljoin(CALENDAR_PAGE_URL, a["href"]) for a in soup.find_all("a", href=True) if ".pdf" in a["href"].lower()]
-        if not all_pdfs:
-            raise Exception("ページ内からPDFリンクが見つかりませんでした。")
-        target_url = all_pdfs[0]
+def run_curl(url, output_path=None):
+    """curlコマンドを使ってブラウザになりすまして取得する"""
+    cmd = [
+        "curl", "-sL",
+        "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "-H", "Accept-Language: ja,en-US;q=0.9,en;q=0.8",
+        "-H", "Referer: https://www.fsw.tv/",
+        "--compressed",
+        url
+    ]
+    if output_path:
+        cmd.extend(["-o", output_path])
+        subprocess.run(cmd, check=True)
+        return output_path
     else:
-        target_url = pdf_links[0]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return result.stdout
 
-    print(f"対象PDFのURL: {target_url}")
-    headers["Referer"] = CALENDAR_PAGE_URL
-    pdf_res = session.get(target_url, headers=headers, timeout=30)
-    pdf_res.raise_for_status()
+def download_latest_fsw_pdf():
+    """FSW公式サイトから最新の走行カレンダーPDFを探してダウンロードする"""
+    print(f"カレンダー掲載ページを取得中: {CALENDAR_PAGE_URL}")
+    html_content = run_curl(CALENDAR_PAGE_URL)
+
+    # ページ内のリンクからPDFを探す
+    pdf_urls = re.findall(r'href=["\'](.*?\.pdf)["\']', html_content, re.IGNORECASE)
+    
+    if not pdf_urls:
+        raise Exception("カレンダーページからPDFリンクが検出できませんでした。")
+
+    target_href = None
+    for href in pdf_urls:
+        if any(k in href.lower() for k in ["sports", "calendar", "racing", "soukou", "drive"]):
+            target_href = href
+            break
+    if not target_href:
+        target_href = pdf_urls[0]
+
+    full_url = urllib.parse.urljoin(CALENDAR_PAGE_URL, target_href)
+    print(f"対象PDFのURL: {full_url}")
 
     local_pdf = "downloaded_calendar.pdf"
-    with open(local_pdf, "wb") as f:
-        f.write(pdf_res.content)
+    run_curl(full_url, output_path=local_pdf)
     
-    print(f"PDFダウンロード成功: {local_pdf}")
-    return local_pdf
+    # ダウンロードしたファイルが有効なPDFかサイズ判定
+    if os.path.exists(local_pdf) and os.path.getsize(local_pdf) > 5000:
+        print(f"PDFダウンロード成功: {local_pdf}")
+        return local_pdf
+    else:
+        raise Exception("ダウンロードされたファイルが空、またはアクセス制限を受けました。")
 
 def parse_fsw_pdf(pdf_path):
     events = []
@@ -185,12 +182,12 @@ if __name__ == '__main__':
     try:
         pdf_file = download_latest_fsw_pdf()
     except Exception as e:
-        print(f"Webからの取得をスキップ（または失敗）: {e}")
+        print(f"Web自動取得をスキップ（または失敗）: {e}")
         import glob
-        local_pdfs = glob.glob("*.pdf")
+        local_pdfs = [f for f in glob.glob("*.pdf") if "downloaded" not in f]
         if local_pdfs:
             pdf_file = local_pdfs[0]
-            print(f"リポジトリ内の既存PDFを使用します: {pdf_file}")
+            print(f"リポジトリ内のバックアップPDFを使用します: {pdf_file}")
         else:
             raise e
 
