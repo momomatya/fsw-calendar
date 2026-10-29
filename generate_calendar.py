@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 import pdfplumber
 from icalendar import Calendar, Event
 
-# ログをリアルタイムで出力させる設定
 sys.stdout.reconfigure(line_buffering=True)
 
 CALENDAR_PAGE_URL = "https://www.fsw.tv/driving/calendar/"
@@ -84,4 +83,29 @@ def parse_single_page(page, page_num):
     hour_x_map = {}
     for h in range(7, 19):
         pattern = f"{h}:00"
-        matches = [w for w in words if w['text'] == pattern and w['x0'] > 150
+        matches = [w for w in words if w['text'] == pattern and w['x0'] > 150 and w['top'] < 100]
+        if matches:
+            m = min(matches, key=lambda x: x['top'])
+            hour_x_map[h] = (m['x0'] + m['x1']) / 2.0
+
+    valid_hours = sorted(hour_x_map.keys())
+    if len(valid_hours) >= 2:
+        h_first, h_last = valid_hours[0], valid_hours[-1]
+        points_per_hour = (hour_x_map[h_last] - hour_x_map[h_first]) / (h_last - h_first)
+        x_7 = hour_x_map[h_first] - (h_first - 7) * points_per_hour
+    else:
+        x_7 = 205.0
+        points_per_hour = 30.8
+
+    day_rows = []
+    for d in range(1, 32):
+        d_chars = [c for c in chars if c['text'] == str(d) and c['x0'] < 65 and c['top'] > 70]
+        if d_chars:
+            chosen = min(d_chars, key=lambda c: c['x0'])
+            day_rows.append((d, chosen['top'], chosen['bottom']))
+
+    for day, top_y, bottom_y in day_rows:
+        center_y = (top_y + bottom_y) / 2.0
+        row_chars = [c for c in chars if abs(((c['top'] + c['bottom']) / 2.0) - center_y) < 7 and c['x0'] >= (x_7 - 10)]
+        if not row_chars:
+            continue
