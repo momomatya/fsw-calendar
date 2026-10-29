@@ -98,7 +98,6 @@ def parse_single_page(page, page_num):
         x_7 = 205.0
         points_per_hour = 30.8
 
-    # 左端の日付（1〜31）の検出
     day_rows = []
     for d in range(1, 32):
         d_str = str(d)
@@ -120,14 +119,12 @@ def parse_single_page(page, page_num):
         else:
             lower_bound = (bottom_y + day_rows[i+1][1]) / 2.0
 
-        # 生の文字オブジェクト（chars）から直接収集（ドット柄を完全に貫通）
         row_chars = [c for c in chars if upper_bound <= ((c['top'] + c['bottom']) / 2.0) <= lower_bound and c['x0'] >= (x_7 - 15)]
         if not row_chars:
             continue
 
         row_chars = sorted(row_chars, key=lambda c: c['x0'])
 
-        # 文字同士の間隔でクラスタリング（間隔が広すぎない範囲で同一枠を結合）
         clusters = []
         curr = []
         for c in row_chars:
@@ -135,11 +132,9 @@ def parse_single_page(page, page_num):
                 curr.append(c)
             else:
                 prev_c = curr[-1]
-                # ドットの点（・や . など）は無視
                 if c['text'] in ['・', '･', '.', ' ']:
                     continue
-                # 文字間隔が 7pt 以内なら同じ枠文字
-                if (c['x0'] - prev_c['x1']) < 7.5:
+                if (c['x0'] - prev_c['x1']) < 8.0:
                     curr.append(c)
                 else:
                     clusters.append(curr)
@@ -151,7 +146,7 @@ def parse_single_page(page, page_num):
             raw_text = "".join([c['text'] for c in cluster])
             clean_str = re.sub(r'[^A-Za-z0-9]', '', raw_text).upper()
 
-            # 枠判定 (S4, NS4, N4, R4, RC4, FS4, L4, O4) + (A/B/C/D)
+            # L4, S4, NS4, N4, R4, RC4, FS4, O4 に対応
             match = re.search(r'(S4|NS4|N4|R4|RC4|FS4|L4|O4)([ABCD]?)', clean_str)
             if not match:
                 continue
@@ -162,12 +157,10 @@ def parse_single_page(page, page_num):
             if grp_name:
                 formatted_title += f" {grp_name}"
 
-            # 枠の開始X座標
             start_x = cluster[0]['x0']
             adjusted_x = start_x - 4.0
             total_minutes = 7 * 60 + ((adjusted_x - x_7) / points_per_hour) * 60.0
 
-            # 10分刻み（9:30, 10:10, 10:50, 11:30等）にスナップ
             snapped_minute = int(round(total_minutes / 10.0) * 10)
             hour = snapped_minute // 60
             minute = snapped_minute % 60
@@ -179,7 +172,8 @@ def parse_single_page(page, page_num):
                     "summary": formatted_title,
                     "start": start_dt,
                     "end": end_dt,
-                    "description": f"富士スピードウェイ レーシングコース スポーツ走行枠\n枠名: {formatted_title}"
+                    "time_str": f"{hour}:{minute:02d}",
+                    "description": f"富士スピードウェイ レーシングコース スポーツ走行枠\n枠名: {formatted_title}\n時間: {hour}:{minute:02d}〜"
                 })
             except ValueError:
                 continue
@@ -193,12 +187,10 @@ def parse_single_page(page, page_num):
             unique_events.append(ev)
 
     print(f"  -> {year}年{month}月のページから {len(unique_events)} 件の走行枠を抽出完了", flush=True)
-    if month == 11:
-        for chk_day in [2, 7]:
-            chk_events = [e for e in unique_events if e['start'].day == chk_day]
-            print(f"     [11/{chk_day} 検証] 抽出件数: {len(chk_events)} 件", flush=True)
-            for e in chk_events:
-                print(f"       - {e['start'].strftime('%H:%M')} {e['summary']}", flush=True)
+    # L-4 枠の検出ログ
+    l4_events = [e for e in unique_events if "L-4" in e['summary']]
+    if l4_events:
+        print(f"     [L-4 検出] {len(l4_events)} 件: {', '.join([f'{e[\"start\"].day}日 {e[\"time_str\"]}' for e in l4_events])}", flush=True)
 
     return unique_events
 
@@ -225,7 +217,7 @@ def create_ical(events, output_filename="fsw_calendar.ics"):
 
     for ev in events:
         event = Event()
-        event.add('summary', f"FSW {ev['summary']}")
+        event.add('summary', f"FSW {ev['time_str']} {ev['summary']}")
         event.add('dtstart', ev['start'])
         event.add('dtend', ev['end'])
         event.add('description', ev['description'])
@@ -241,8 +233,10 @@ def save_events_json(events, output_filename="events.json"):
     for ev in events:
         start_str = ev["start"].strftime("%Y-%m-%dT%H:%M:%S")
         end_str = ev["end"].strftime("%Y-%m-%dT%H:%M:%S")
+        display_title = f"{ev['time_str']} {ev['summary']}"
         web_events.append({
-            "title": ev["summary"],
+            "title": display_title,
+            "raw_summary": ev["summary"],
             "start": start_str,
             "end": end_str,
             "description": ev["description"]
@@ -254,7 +248,6 @@ def save_events_json(events, output_filename="events.json"):
 def main():
     print("=== スクリプト実行開始 ===", flush=True)
     local_pdfs = [f for f in glob.glob("*.pdf") if "downloaded" not in f]
-    print(f"リポジトリ内の検出PDF一覧: {local_pdfs}", flush=True)
 
     pdf_file = None
     try:
@@ -263,7 +256,7 @@ def main():
         print(f"Web自動取得をスキップ（または失敗）: {e}", flush=True)
         if local_pdfs:
             pdf_file = sorted(local_pdfs, key=lambda x: os.path.getsize(x), reverse=True)[0]
-            print(f"リポジトリ内のバックアップPDFを使用します: {pdf_file} (サイズ: {os.path.getsize(pdf_file)} bytes)", flush=True)
+            print(f"リポジトリ内のバックアップPDFを使用します: {pdf_file}", flush=True)
         else:
             raise e
 
