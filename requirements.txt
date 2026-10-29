@@ -1,4 +1,3 @@
-Plaintext
 pdfplumber
 icalendar
 requests
