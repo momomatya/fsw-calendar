@@ -58,101 +58,111 @@ def download_latest_fsw_pdf():
     else:
         raise Exception("ダウンロードされたファイルが空、またはアクセス制限を受けました。")
 
-def parse_fsw_pdf(pdf_path):
-    events = []
-    with pdfplumber.open(pdf_path) as pdf:
-        target_page = None
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            if "レーシングコース" in text and "スポーツ走行予定表" in text:
-                target_page = page
-                break
+def parse_single_page(page):
+    """1ページ分の走行予定表を解析してイベントリストを返す"""
+    page_events = []
+    page_text = page.extract_text() or ""
+    
+    # 年月を抽出
+    year_match = re.search(r'(\d{4})年\s*(\d{1,2})月', page_text)
+    if year_match:
+        year = int(year_match.group(1))
+        month = int(year_match.group(2))
+    else:
+        return []
+
+    words = page.extract_words()
+    if not words:
+        return []
+
+    # 時間目盛りの基準（7:00 と 18:00 のX座標）
+    time_headers = {}
+    for h in range(7, 19):
+        matches = [w for w in words if w['text'] == f"{h}:00" and w['x0'] > 180]
+        if matches:
+            time_headers[h] = min(matches, key=lambda x: x['top'])['x0']
+
+    x_7 = time_headers.get(7, 201.1)
+    x_18 = time_headers.get(18, 540.2)
+    points_per_hour = (x_18 - x_7) / 11.0
+
+    # 日付行の特定
+    day_rows = []
+    for d in range(1, 32):
+        d_words = [w for w in words if w['text'] == str(d) and w['x0'] < 60 and w['top'] > 100]
+        if d_words:
+            day_rows.append((d, d_words[0]['top']))
+
+    for day, y_top in day_rows:
+        row_words = [w for w in words if abs(w['top'] - y_top) < 6 and w['x0'] >= (x_7 - 5)]
+        if not row_words:
+            continue
+
+        row_words = sorted(row_words, key=lambda x: x['x0'])
         
-        if not target_page:
-            target_page = pdf.pages[6] if len(pdf.pages) >= 7 else pdf.pages[-1]
-
-        page_text = target_page.extract_text() or ""
-        year_match = re.search(r'(\d{4})年\s*(\d{1,2})月', page_text)
-        if year_match:
-            year = int(year_match.group(1))
-            month = int(year_match.group(2))
-        else:
-            now = datetime.now()
-            year, month = now.year, now.month
-
-        words = target_page.extract_words()
-
-        time_headers = {}
-        for h in range(7, 19):
-            matches = [w for w in words if w['text'] == f"{h}:00" and w['x0'] > 180]
-            if matches:
-                time_headers[h] = min(matches, key=lambda x: x['top'])['x0']
-
-        x_7 = time_headers.get(7, 201.1)
-        x_18 = time_headers.get(18, 540.2)
-        points_per_hour = (x_18 - x_7) / 11.0
-
-        day_rows = []
-        for d in range(1, 32):
-            d_words = [w for w in words if w['text'] == str(d) and w['x0'] < 60 and w['top'] > 100]
-            if d_words:
-                day_rows.append((d, d_words[0]['top']))
-
-        for day, y_top in day_rows:
-            row_words = [w for w in words if abs(w['top'] - y_top) < 6 and w['x0'] >= (x_7 - 5)]
-            if not row_words:
-                continue
-
-            row_words = sorted(row_words, key=lambda x: x['x0'])
-            
-            clusters = []
-            curr_cluster = []
-            for w in row_words:
-                if not curr_cluster:
+        clusters = []
+        curr_cluster = []
+        for w in row_words:
+            if not curr_cluster:
+                curr_cluster.append(w)
+            else:
+                prev_w = curr_cluster[-1]
+                gap = w['x0'] - prev_w['x1']
+                if gap < 5.0:
                     curr_cluster.append(w)
                 else:
-                    prev_w = curr_cluster[-1]
-                    gap = w['x0'] - prev_w['x1']
-                    if gap < 5.0:
-                        curr_cluster.append(w)
-                    else:
-                        clusters.append(curr_cluster)
-                        curr_cluster = [w]
-            if curr_cluster:
-                clusters.append(curr_cluster)
+                    clusters.append(curr_cluster)
+                    curr_cluster = [w]
+        if curr_cluster:
+            clusters.append(curr_cluster)
 
-            for cluster in clusters:
-                text = " ".join([w['text'] for w in cluster]).strip()
-                text = re.sub(r'\s+', ' ', text)
-                
-                if not any(cls in text for cls in ['S-4', 'NS-4', 'N-4', 'R-4', 'RC-4', 'FS-4', 'L-4', 'O-4']):
-                    continue
+        for cluster in clusters:
+            text = " ".join([w['text'] for w in cluster]).strip()
+            text = re.sub(r'\s+', ' ', text)
+            
+            if not any(cls in text for cls in ['S-4', 'NS-4', 'N-4', 'R-4', 'RC-4', 'FS-4', 'L-4', 'O-4']):
+                continue
 
-                start_x = cluster[0]['x0']
-                offset_hours = (start_x - x_7) / points_per_hour
-                total_minutes = 7 * 60 + int(offset_hours * 60)
-                
-                hour = total_minutes // 60
-                minute = total_minutes % 60
-                
-                minute = int(round(minute / 5.0) * 5)
-                if minute >= 60:
-                    hour += 1
-                    minute -= 60
+            start_x = cluster[0]['x0']
+            offset_hours = (start_x - x_7) / points_per_hour
+            total_minutes = 7 * 60 + int(offset_hours * 60)
+            
+            hour = total_minutes // 60
+            minute = total_minutes % 60
+            
+            minute = int(round(minute / 5.0) * 5)
+            if minute >= 60:
+                hour += 1
+                minute -= 60
 
-                try:
-                    start_dt = datetime(year, month, day, hour, minute)
-                    end_dt = start_dt + timedelta(minutes=DEFAULT_DURATION_MINUTES)
-                    events.append({
-                        "summary": f"{text}",
-                        "start": start_dt,
-                        "end": end_dt,
-                        "description": f"富士スピードウェイ レーシングコース スポーツ走行枠\n枠名: {text}"
-                    })
-                except ValueError:
-                    continue
+            try:
+                start_dt = datetime(year, month, day, hour, minute)
+                end_dt = start_dt + timedelta(minutes=DEFAULT_DURATION_MINUTES)
+                page_events.append({
+                    "summary": f"{text}",
+                    "start": start_dt,
+                    "end": end_dt,
+                    "description": f"富士スピードウェイ レーシングコース スポーツ走行枠\n枠名: {text}"
+                })
+            except ValueError:
+                continue
 
-    return events
+    print(f"  -> {year}年{month}月のページから {len(page_events)} 件の走行枠を抽出")
+    return page_events
+
+def parse_fsw_pdf(pdf_path):
+    """PDF内の全ページを走査し、対象ページをすべて合算する"""
+    all_events = []
+    with pdfplumber.open(pdf_path) as pdf:
+        for idx, page in enumerate(pdf.pages):
+            text = page.extract_text() or ""
+            # レーシングコースのスポーツ走行予定表が含まれるページのみ抽出
+            if "レーシングコース" in text and "スポーツ走行予定表" in text:
+                print(f"対象ページ検出: ページ {idx + 1}")
+                events = parse_single_page(page)
+                all_events.extend(events)
+
+    return all_events
 
 def create_ical(events, output_filename="fsw_calendar.ics"):
     cal = Calendar()
@@ -173,7 +183,6 @@ def create_ical(events, output_filename="fsw_calendar.ics"):
     print(f"[成功] iCalカレンダー生成完了: {output_filename}")
 
 def save_events_json(events, output_filename="events.json"):
-    """Webフロントエンド（FullCalendar等）で読み込めるJSON形式で保存"""
     web_events = []
     for ev in events:
         web_events.append({
