@@ -2,203 +2,128 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FSW 会員走行カレンダー</title>
-  <!-- FullCalendar CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    :root {
-      --s4-color: #ef4444;
-      --ns4-color: #0284c7;
-      --n4-color: #10b981;
-      --r4-color: #f59e0b;
-      --other-color: #64748b;
-    }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      margin: 0;
-      padding: 8px;
-      background-color: #f1f5f9;
-      color: #0f172a;
-    }
-    .header {
-      max-width: 1000px;
-      margin: 0 auto 8px auto;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .header-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    h1 {
-      font-size: 1.15rem;
-      margin: 0;
-      font-weight: 700;
-    }
-    .download-link {
-      font-size: 0.8rem;
-      color: #2563eb;
-      text-decoration: none;
-      background: #e0e7ff;
-      padding: 4px 8px;
-      border-radius: 4px;
-    }
-    /* 絞り込みフィルターバー */
-    .filter-bar {
-      display: flex;
-      gap: 6px;
-      overflow-x: auto;
-      padding-bottom: 4px;
-    }
-    .filter-btn {
-      border: 1px solid #cbd5e1;
-      background: #ffffff;
-      padding: 4px 10px;
-      border-radius: 16px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    .filter-btn.active {
-      background: #0f172a;
-      color: #ffffff;
-      border-color: #0f172a;
-    }
-    .calendar-container {
-      max-width: 1000px;
-      margin: 0 auto;
-      background: #ffffff;
-      padding: 10px;
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
-    /* カレンダーヘッダー調整 */
-    .fc-toolbar {
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-    .fc-toolbar-title {
-      font-size: 1.1rem !important;
-    }
-    .fc-button {
-      padding: 4px 8px !important;
-      font-size: 0.8rem !important;
-    }
-    /* イベント装飾 */
     .fc-event {
       cursor: pointer;
-      font-size: 0.78rem;
-      border-radius: 3px;
-      border: none;
+      font-size: 0.75rem;
+      border: none !important;
+      border-radius: 4px;
+      padding: 1px 3px;
+      margin-bottom: 2px;
     }
-    .event-s { background-color: var(--s4-color) !important; }
-    .event-ns { background-color: var(--ns4-color) !important; }
-    .event-n { background-color: var(--n4-color) !important; }
-    .event-r { background-color: var(--r4-color) !important; }
-    .event-other { background-color: var(--other-color) !important; }
-
-    /* リストビュー時の見た目調整 */
-    .fc-list-event-title {
+    .fc-event-title {
       font-weight: 600;
-    }
-    .fc-list-day-cushion {
-      background-color: #f8fafc !important;
     }
   </style>
 </head>
-<body>
+<body class="bg-slate-50 text-slate-800">
 
-  <div class="header">
-    <div class="header-top">
-      <h1>🏁 FSW 会員走行枠</h1>
-      <a class="download-link" href="fsw_calendar.ics">📥 iCal</a>
+  <div class="max-w-6xl mx-auto p-3 sm:p-6">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div>
+        <h1 class="text-xl sm:text-2xl font-bold flex items-center gap-2">
+          🏁 FSW 会員走行枠
+        </h1>
+        <p class="text-xs text-slate-500 mt-1">富士スピードウェイ レーシングコース（RC）</p>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <a href="fsw_calendar.ics" download class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg shadow-sm transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          iCal連携
+        </a>
+      </div>
     </div>
 
-    <!-- クラス絞り込みボタン -->
-    <div class="filter-bar">
-      <button class="filter-btn active" onclick="setFilter('ALL', this)">すべて</button>
-      <button class="filter-btn" onclick="setFilter('NS-4', this)" style="color:var(--ns4-color);">NS-4</button>
-      <button class="filter-btn" onclick="setFilter('S-4', this)" style="color:var(--s4-color);">S-4</button>
-      <button class="filter-btn" onclick="setFilter('N-4', this)" style="color:var(--n4-color);">N-4</button>
-      <button class="filter-btn" onclick="setFilter('R-4', this)" style="color:var(--r4-color);">R-4</button>
+    <!-- フィルターボタン -->
+    <div class="flex flex-wrap gap-1.5 mb-4 text-xs font-semibold" id="filter-container">
+      <button onclick="filterCategory('ALL')" id="btn-ALL" class="px-3 py-1 rounded-full bg-slate-900 text-white shadow">すべて</button>
+      <button onclick="filterCategory('NS-4')" id="btn-NS-4" class="px-3 py-1 rounded-full bg-cyan-100 text-cyan-800 border border-cyan-300">NS-4</button>
+      <button onclick="filterCategory('S-4')" id="btn-S-4" class="px-3 py-1 rounded-full bg-red-100 text-red-800 border border-red-300">S-4</button>
+      <button onclick="filterCategory('N-4')" id="btn-N-4" class="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">N-4</button>
+      <button onclick="filterCategory('R-4')" id="btn-R-4" class="px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300">R-4</button>
     </div>
-  </div>
 
-  <div class="calendar-container">
-    <div id="calendar"></div>
+    <!-- カレンダー本体 -->
+    <div class="bg-white p-3 sm:p-5 rounded-2xl shadow-sm border border-slate-200">
+      <div id="calendar"></div>
+    </div>
   </div>
 
   <script>
     let calendar;
-    let rawEvents = [];
+    let allEvents = [];
     let currentFilter = 'ALL';
 
-    document.addEventListener('DOMContentLoaded', function() {
-      const isMobile = window.innerWidth < 768;
+    function getEventColor(title) {
+      if (title.includes('S-4')) return '#ef4444';
+      if (title.includes('NS-4')) return '#06b6d4';
+      if (title.includes('N-4')) return '#10b981';
+      if (title.includes('R-4')) return '#f59e0b';
+      return '#64748b';
+    }
+
+    document.addEventListener('DOMContentLoaded', async function() {
       const calendarEl = document.getElementById('calendar');
 
+      try {
+        const res = await fetch('events.json?v=' + Date.now());
+        allEvents = await res.json();
+      } catch (e) {
+        console.error('イベント取得エラー:', e);
+      }
+
       calendar = new FullCalendar.Calendar(calendarEl, {
-        // スマホはリスト表示（listMonth）、PCは月間カレンダー（dayGridMonth）
-        initialView: isMobile ? 'listMonth' : 'dayGridMonth',
+        initialView: 'dayGridMonth',
         locale: 'ja',
-        height: 'auto',
         headerToolbar: {
           left: 'prev,next today',
           center: 'title',
-          right: isMobile ? 'listMonth,dayGridMonth' : 'dayGridMonth,timeGridWeek,listMonth'
+          right: 'dayGridMonth,timeGridWeek,listMonth'
         },
         buttonText: {
           today: '今日',
           month: '月カレンダー',
           week: '週',
-          listMonth: 'リスト一覧'
+          list: 'リスト一覧'
         },
-        eventClassNames: function(arg) {
-          const title = arg.event.title.toUpperCase();
-          if (title.includes('NS-4')) return ['event-ns'];
-          if (title.includes('S-4')) return ['event-s'];
-          if (title.includes('N-4')) return ['event-n'];
-          if (title.includes('R-4')) return ['event-r'];
-          return ['event-other'];
+        // 00分でも省略させず、常に "8:00" 形式で表示
+        eventTimeFormat: {
+          hour: 'numeric',
+          minute: '2-digit',
+          omitZeroMinute: false,
+          meridiem: false,
+          hour12: false
         },
-        eventClick: function(info) {
-          const start = info.event.start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-          const end = info.event.end ? info.event.end.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
-          alert(`${info.event.title}\n時間: ${start} - ${end}`);
+        events: getFilteredEvents(),
+        eventDidMount: function(info) {
+          info.el.style.backgroundColor = getEventColor(info.event.title);
         }
       });
-
-      // キャッシュ無効化クエリを付けてJSONを取得
-      fetch('events.json?v=' + new Date().getTime())
-        .then(res => res.json())
-        .then(data => {
-          rawEvents = data;
-          applyFilter();
-        });
 
       calendar.render();
     });
 
-    function setFilter(category, btn) {
-      currentFilter = category;
-      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      applyFilter();
+    function getFilteredEvents() {
+      if (currentFilter === 'ALL') return allEvents;
+      return allEvents.filter(ev => ev.title.includes(currentFilter));
     }
 
-    function applyFilter() {
-      if (!calendar) return;
+    function filterCategory(cat) {
+      currentFilter = cat;
+      document.querySelectorAll('#filter-container button').forEach(b => {
+        b.className = "px-3 py-1 rounded-full bg-white text-slate-700 border border-slate-300";
+      });
+      const activeBtn = document.getElementById('btn-' + cat);
+      if (activeBtn) {
+        activeBtn.className = "px-3 py-1 rounded-full bg-slate-900 text-white shadow";
+      }
       calendar.removeAllEvents();
-      
-      const filtered = currentFilter === 'ALL' 
-        ? rawEvents 
-        : rawEvents.filter(ev => ev.title.toUpperCase().includes(currentFilter));
-
-      calendar.addEventSource(filtered);
+      calendar.addEventSource(getFilteredEvents());
     }
   </script>
 </body>
