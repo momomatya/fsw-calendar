@@ -98,6 +98,7 @@ def parse_single_page(page, page_num):
         x_7 = 205.0
         points_per_hour = 30.8
 
+    # 左端の日付（1〜31）の検出
     day_rows = []
     for d in range(1, 32):
         d_str = str(d)
@@ -119,22 +120,29 @@ def parse_single_page(page, page_num):
         else:
             lower_bound = (bottom_y + day_rows[i+1][1]) / 2.0
 
+        # 当該日付行の文字群
         row_chars = [c for c in chars if upper_bound <= ((c['top'] + c['bottom']) / 2.0) <= lower_bound and c['x0'] >= (x_7 - 15)]
         if not row_chars:
             continue
 
-        row_chars = sorted(row_chars, key=lambda c: c['x0'])
+        # ドットやノイズ文字を除去
+        valid_chars = [c for c in row_chars if c['text'] not in ['・', '･', '.', ' ']]
+        if not valid_chars:
+            continue
 
+        # X座標の近さ（横方向の重なり）でまずグループ化
+        # これにより上下2段（L-4 の下に A）に分かれていても同じX位置なら同一枠として束ねられる
+        valid_chars = sorted(valid_chars, key=lambda c: c['x0'])
+        
         clusters = []
         curr = []
-        for c in row_chars:
+        for c in valid_chars:
             if not curr:
                 curr.append(c)
             else:
                 prev_c = curr[-1]
-                if c['text'] in ['・', '･', '.', ' ']:
-                    continue
-                if (c['x0'] - prev_c['x1']) < 8.0:
+                # X方向の距離が 8.5pt 以内なら同一枠（横並び文字、または上下段文字）
+                if (c['x0'] - prev_c['x1']) < 8.5:
                     curr.append(c)
                 else:
                     clusters.append(curr)
@@ -143,10 +151,12 @@ def parse_single_page(page, page_num):
             clusters.append(curr)
 
         for cluster in clusters:
-            raw_text = "".join([c['text'] for c in cluster])
+            # 枠内の文字をY座標→X座標の順（上から下、左から右）で並べてテキスト化
+            sorted_cluster = sorted(cluster, key=lambda c: (c['top'], c['x0']))
+            raw_text = "".join([c['text'] for c in sorted_cluster])
             clean_str = re.sub(r'[^A-Za-z0-9]', '', raw_text).upper()
 
-            # L4, S4, NS4, N4, R4, RC4, FS4, O4 に対応
+            # 枠判定 (L4, S4, NS4, N4, R4, RC4, FS4, O4) + (A/B/C/D)
             match = re.search(r'(S4|NS4|N4|R4|RC4|FS4|L4|O4)([ABCD]?)', clean_str)
             if not match:
                 continue
@@ -157,10 +167,12 @@ def parse_single_page(page, page_num):
             if grp_name:
                 formatted_title += f" {grp_name}"
 
-            start_x = cluster[0]['x0']
+            # 最も左端のX座標を開始基準にする
+            start_x = min(c['x0'] for c in cluster)
             adjusted_x = start_x - 4.0
             total_minutes = 7 * 60 + ((adjusted_x - x_7) / points_per_hour) * 60.0
 
+            # 10分刻みにスナップ（8:40に吸着）
             snapped_minute = int(round(total_minutes / 10.0) * 10)
             hour = snapped_minute // 60
             minute = snapped_minute % 60
@@ -188,11 +200,10 @@ def parse_single_page(page, page_num):
 
     print(f"  -> {year}年{month}月のページから {len(unique_events)} 件の走行枠を抽出完了", flush=True)
 
-    # 安全な文字列フォーマットでログ出力
-    l4_events = [e for e in unique_events if "L-4" in e['summary']]
-    if l4_events:
-        details = ", ".join([str(e['start'].day) + "日 " + e['time_str'] for e in l4_events])
-        print(f"     [L-4 検出] {len(l4_events)} 件: {details}", flush=True)
+    # 11月7日の検証ログ
+    if month == 11:
+        nov7 = [e for e in unique_events if e['start'].day == 7]
+        print(f"     [11/7 検証] {len(nov7)} 件抽出: {', '.join([e['time_str'] + ' ' + e['summary'] for e in nov7])}", flush=True)
 
     return unique_events
 
