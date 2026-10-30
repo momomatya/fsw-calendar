@@ -45,21 +45,21 @@
 <body class="bg-slate-100 text-slate-800 antialiased min-h-screen">
 
   <div class="max-w-4xl mx-auto px-2 py-3 sm:p-6">
-    <!-- ヘッダー -->
-    <div class="mb-4 bg-slate-950 text-white p-3 sm:p-4 rounded-xl shadow-md border border-slate-800">
-      <div class="flex items-center gap-3 sm:gap-4">
-        <!-- 38 Racing ロゴ画像 -->
-        <img src="logo.png" alt="38 Racing" class="h-11 sm:h-16 w-auto object-contain bg-black rounded p-0.5" onerror="this.style.display='none'">
-        
-        <div>
-          <div class="flex items-center gap-2 flex-wrap">
-            <h1 class="text-base sm:text-xl font-bold flex items-center gap-1.5 text-white tracking-wide">
-              🏁 FSW 走行枠カレンダー
-            </h1>
-            <span class="text-[10px] sm:text-xs bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded font-medium">非公式</span>
-          </div>
-          <p class="text-[10px] sm:text-xs text-slate-400 font-medium mt-0.5">富士スピードウェイ レーシングコース（RC）</p>
+    <!-- ヘッダー（タイトル左・ロゴ右配置） -->
+    <div class="mb-4 bg-slate-950 text-white p-3 sm:p-4 rounded-xl shadow-md border border-slate-800 flex items-center justify-between gap-3">
+      <div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <h1 class="text-base sm:text-xl font-bold flex items-center gap-1.5 text-white tracking-wide">
+            🏁 FSW 走行枠カレンダー
+          </h1>
+          <span class="text-[10px] sm:text-xs bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded font-medium">非公式</span>
         </div>
+        <p class="text-[10px] sm:text-xs text-slate-400 font-medium mt-0.5">富士スピードウェイ レーシングコース（RC）</p>
+      </div>
+
+      <!-- 38 Racing ロゴ画像（右側） -->
+      <div class="flex-shrink-0">
+        <img src="logo.png" alt="38 Racing" class="h-10 sm:h-14 w-auto object-contain bg-black rounded p-0.5" onerror="this.style.display='none'">
       </div>
     </div>
 
