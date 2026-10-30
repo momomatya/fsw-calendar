@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>FSW 会員走行カレンダー</title>
+  <title>【非公式】FSW 会員走行カレンダー</title>
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
@@ -45,17 +45,20 @@
 <body class="bg-slate-100 text-slate-800 antialiased min-h-screen">
 
   <div class="max-w-4xl mx-auto px-2 py-3 sm:p-6">
-    <!-- ヘッダー（iCalボタンを削除し、ロゴとタイトルを配置） -->
+    <!-- ヘッダー -->
     <div class="mb-4 bg-slate-950 text-white p-3 sm:p-4 rounded-xl shadow-md border border-slate-800">
       <div class="flex items-center gap-3 sm:gap-4">
         <!-- 38 Racing ロゴ画像 -->
         <img src="logo.png" alt="38 Racing" class="h-11 sm:h-16 w-auto object-contain bg-black rounded p-0.5" onerror="this.style.display='none'">
         
         <div>
-          <h1 class="text-base sm:text-xl font-bold flex items-center gap-1.5 text-white tracking-wide">
-            🏁 FSW 走行枠カレンダー
-          </h1>
-          <p class="text-[10px] sm:text-xs text-slate-400 font-medium">富士スピードウェイ レーシングコース（RC）</p>
+          <div class="flex items-center gap-2 flex-wrap">
+            <h1 class="text-base sm:text-xl font-bold flex items-center gap-1.5 text-white tracking-wide">
+              🏁 FSW 走行枠カレンダー
+            </h1>
+            <span class="text-[10px] sm:text-xs bg-slate-800 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded font-medium">非公式</span>
+          </div>
+          <p class="text-[10px] sm:text-xs text-slate-400 font-medium mt-0.5">富士スピードウェイ レーシングコース（RC）</p>
         </div>
       </div>
     </div>
@@ -73,6 +76,16 @@
     <div class="bg-white p-2 sm:p-4 rounded-xl shadow-sm border border-slate-200">
       <div id="calendar"></div>
     </div>
+
+    <!-- フッター免責事項 -->
+    <footer class="mt-4 px-2 py-3 text-center">
+      <p class="text-[11px] sm:text-xs text-slate-500 leading-relaxed max-w-2xl mx-auto">
+        ※ 本カレンダーは有志による非公式の個人開発ツールです。富士スピードウェイ公式とは一切関係ありません。急なスケジュール変更等の可能性もあるため、走行前には必ず公式サイトの正式なスケジュールをご確認ください。
+      </p>
+      <p class="text-[10px] text-slate-400 mt-1">
+        データ元：<a href="https://www.fsw.tv/driving/calendar/" target="_blank" rel="noopener noreferrer" class="underline hover:text-slate-600">富士スピードウェイ公式サイト</a>
+      </p>
+    </footer>
   </div>
 
   <script>
